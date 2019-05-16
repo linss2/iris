@@ -138,10 +138,10 @@ func ResolveAddr(addr string) string {
 // ResolveHostname receives an addr of form host[:port] and returns the hostname part of it
 // ex: localhost:8080 will return the `localhost`, mydomain.com:8080 will return the 'mydomain'
 func ResolveHostname(addr string) string {
-	if idx := strings.IndexByte(addr, ':'); idx == 0 {
+	if idx := strings.IndexByte(addr, ':'); idx == 0 { //直接只有显示端口号的
 		// only port, then return the localhost hostname
 		return "localhost"
-	} else if idx > 0 {
+	} else if idx > 0 { // 有实际地址的
 		return addr[0:idx]
 	}
 	// it's already hostname
@@ -153,6 +153,9 @@ func ResolveHostname(addr string) string {
 // and inside {{ url }} template funcs.
 // It should be the same as "browser's"
 // usually they removing :80 or :443.
+// todo 不知道这里的作用是啥(可以理解为虚拟主机)?
+// 如果在指定地址中端口是不需要的，可以获取这个主机名
+// 这里过滤一些特殊的情况，比如只有端口的
 func ResolveVHost(addr string) string {
 	if addr == ":https" || addr == ":http" {
 		return "localhost"
@@ -167,6 +170,7 @@ func ResolveVHost(addr string) string {
 	addr = strings.Replace(addr, "0.0.0.0:", "localhost:", 1)
 	port := ResolvePort(addr)
 	if port == 80 || port == 443 {
+		//只要端口定下，就直接只需要名称就够了
 		return ResolveHostname(addr)
 	}
 
@@ -182,13 +186,17 @@ const (
 
 // ResolvePort receives an addr of form host[:port] and returns the port part of it
 // ex: localhost:8080 will return the `8080`, mydomain.com will return the '80'
+// 取一个网址的端口号，默认返回是80
+// 结构可能的情况
+// 1.:8080
+// 2.:http\:https
 func ResolvePort(addr string) int {
 	if portIdx := strings.IndexByte(addr, ':'); portIdx != -1 {
 		afP := addr[portIdx+1:]
 		p, err := strconv.Atoi(afP)
-		if err == nil {
+		if err == nil { //这里就是之前的情况1
 			return p
-		} else if afP == SchemeHTTPS { // it's not number, check if it's :https
+		} else if afP == SchemeHTTPS { // it's not number, check if it's :https //如果是:https 则返回端口443，如果不是则80
 			return 443
 		}
 	}
@@ -197,6 +205,8 @@ func ResolvePort(addr string) int {
 
 // ResolveScheme returns "https" if "isTLS" receiver is true,
 // otherwise "http".
+// 这里是通过supervisor中的manuallyTLS字段
+// manuallyTLS为true的前提只有服务通过ListenAndServeTLS启动
 func ResolveScheme(isTLS bool) string {
 	if isTLS {
 		return SchemeHTTPS
@@ -214,7 +224,9 @@ func ResolveSchemeFromVHost(vhost string) string {
 
 // ResolveURL takes the scheme and an address
 // and returns its URL, pure implementation but it does the job.
+// 这里就是将协议以及主机名组合起来
 func ResolveURL(scheme string, addr string) string {
+	//ResolveHost是保证addr的最终是符合代码习惯的
 	host := ResolveVHost(addr)
 	return scheme + "://" + host
 }

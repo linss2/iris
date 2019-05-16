@@ -131,6 +131,7 @@ const MethodNone = "NONE"
 // It contains and handles all the necessary parts to create a fast web server.
 type Application struct {
 	// routing embedded | exposing APIBuilder's and Router's public API.
+	//todo 为啥APIBuilder这边直接使用了呢，而不是直接使用Router里面的RoutesProvider?
 	*router.APIBuilder
 	*router.Router
 	ContextPool *context.Pool
@@ -144,7 +145,9 @@ type Application struct {
 
 	// view engine
 	view view.View
+
 	// used for build
+	// 这个是为了Build()里面创建的
 	once sync.Once
 
 	mu sync.Mutex
@@ -156,7 +159,11 @@ type Application struct {
 	// Additional Host Supervisors can be added to that list by calling the `app.NewHost` manually.
 	//
 	// Hosts field is available after `Run` or `NewHost`.
-	Hosts             []*host.Supervisor
+	// 包含这个app中所有的host Supervisor(服务)
+	// 添加的方式:(慢慢补充)
+	// 1:addr()中通过NewHost()添加
+	Hosts []*host.Supervisor
+	// 给每一个准备添加到当前application的supervisor配置[]host.Configurator
 	hostConfigurators []host.Configurator
 }
 
@@ -509,11 +516,14 @@ func (app *Application) ConfigureHost(configurators ...host.Configurator) *Appli
 // NewHost accepts a standar *http.Server object,
 // completes the necessary missing parts of that "srv"
 // and returns a new, ready-to-use, host (supervisor).
+// newHost接受一个标准的http.Server对象，返回一个新的准备被使用的host.Supervisor
 func (app *Application) NewHost(srv *http.Server) *host.Supervisor {
 	app.mu.Lock()
 	defer app.mu.Unlock()
 
 	// set the server's handler to the framework's router
+	// 如果srv的Handler为空，则填充app.Router，其中app.Router里面的Handler是用来用户自己实现的
+	// 即router的mainHandler里面的数据
 	if srv.Handler == nil {
 		srv.Handler = app.Router
 	}
@@ -530,6 +540,7 @@ func (app *Application) NewHost(srv *http.Server) *host.Supervisor {
 
 	// create the new host supervisor
 	// bind the constructed server and return it
+	// 这里返回一个Supervisor
 	su := host.New(srv)
 
 	if app.config.vhost == "" { // vhost now is useful for router subdomain on wildcard subdomains,
@@ -548,13 +559,16 @@ func (app *Application) NewHost(srv *http.Server) *host.Supervisor {
 
 	if !app.config.DisableStartupLog {
 		// show the available info to exit from app.
+		// todo 这里的app.Logger.Printer.Output需要了解下
 		su.RegisterOnServe(host.WriteStartupLogOnServe(app.logger.Printer.Output)) // app.logger.Writer -> Info
 		app.logger.Debugf("Host: register startup notifier")
 	}
 
 	if !app.config.DisableInterruptHandler {
 		// when CTRL+C/CMD+C pressed.
+		// 关闭的时间是5秒
 		shutdownTimeout := 5 * time.Second
+		// todo 这里将会使用interrupt.go 的内容，之后再来看
 		host.RegisterOnInterrupt(host.ShutdownOnInterrupt(su, shutdownTimeout))
 		app.logger.Debugf("Host: register server shutdown on interrupt(CTRL+C/CMD+C)")
 	}
@@ -563,7 +577,7 @@ func (app *Application) NewHost(srv *http.Server) *host.Supervisor {
 	if len(su.IgnoredErrors) > 0 {
 		app.logger.Debugf("Host: server will ignore the following errors: %s", su.IgnoredErrors)
 	}
-
+	// 这里的hostConfigurators是func(su *Supervisor)的数组，用来配置当前的su
 	su.Configure(app.hostConfigurators...)
 
 	app.Hosts = append(app.Hosts, su)
@@ -648,17 +662,20 @@ func Server(srv *http.Server, hostConfigs ...host.Configurator) Runner {
 // and a listener which listens on that host and port.
 //
 // Addr should have the form of [host]:port, i.e localhost:8080 or :8080.
-//
+// addr的格式是[host]:port
 // Second argument is optional, it accepts one or more
 // `func(*host.Configurator)` that are being executed
 // on that specific host that this function will create to start the server.
-// Via host configurators you can configure the back-end host supervisor,
+// Via(经由，通过，凭借) host configurators you can configure the back-end(结尾的) host supervisor,
 // i.e to add events for shutdown, serve or error.
 // An example of this use case can be found at:
 // https://github.com/kataras/iris/blob/master/_examples/http-listening/notify-on-shutdown/main.go
 // Look at the `ConfigureHost` too.
 //
 // See `Run` for more.
+// host.Configurator -> func(su *Supervisor)
+// 这里的NewHost里会进行传进来的app中自带的[]host.Configurator
+// 而参数这里的是对当前application进行额外配置
 func Addr(addr string, hostConfigs ...host.Configurator) Runner {
 	return func(app *Application) error {
 		return app.NewHost(&http.Server{Addr: addr}).
@@ -757,9 +774,10 @@ func Raw(f func() error) Runner {
 // Build sets up, once, the framework.
 // It builds the default router with its default macros
 // and the template functions that are very-closed to iris.
+//在 app.Run()的时候运行
 func (app *Application) Build() error {
 	rp := errors.NewReporter()
-
+	//app.once在这里使用
 	app.once.Do(func() {
 		rp.Describe("api builder: %v", app.APIBuilder.GetReport())
 
@@ -767,7 +785,7 @@ func (app *Application) Build() error {
 			// router
 			// create the request handler, the default routing handler
 			routerHandler := router.NewDefaultHandler()
-
+			// 这里的app.Router.BuildRouter()是最核心的地方
 			rp.Describe("router: %v", app.Router.BuildRouter(app.ContextPool, routerHandler, app.APIBuilder, false))
 			// re-build of the router from outside can be done with;
 			// app.RefreshRouter()
@@ -813,7 +831,7 @@ func (app *Application) Run(serve Runner, withOrWithout ...Configurator) error {
 	if err := app.Build(); err != nil {
 		return errors.PrintAndReturnErrors(err, app.logger.Errorf)
 	}
-
+	//这里专门针对当前的application进行配置
 	app.Configure(withOrWithout...)
 	app.logger.Debugf("Application: running using %d host(s)", len(app.Hosts)+1)
 

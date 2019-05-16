@@ -17,16 +17,19 @@ import (
 
 // WriteStartupLogOnServe is a task which accepts a logger(io.Writer)
 // and logs the listening address
-// by a generated message based on the host supervisor's server and writes it to the "w".
+// by a generated(产生) message based on the host supervisor's server and writes it to the "w".
 // This function should be registered on Serve.
+// 这个的作用主要是记录监听地址的日志，从supervisor的服务产生消息，并通过这里输出到指定的 io.Writer
 func WriteStartupLogOnServe(w io.Writer) func(TaskHost) {
 	return func(h TaskHost) {
+		// 判断协议
 		guessScheme := netutil.ResolveScheme(h.Supervisor.manuallyTLS)
 		listeningURI := netutil.ResolveURL(guessScheme, h.Supervisor.Server.Addr)
 		interruptkey := "CTRL"
 		if runtime.GOOS == "darwin" {
 			interruptkey = "CMD"
 		}
+		// 这里就是每次服务启动的时候，输出一些Now listening...的地方
 		w.Write([]byte(fmt.Sprintf("Now listening on: %s\nApplication started. Press %s+C to shut down.\n",
 			listeningURI, interruptkey)))
 	}
@@ -36,9 +39,15 @@ func WriteStartupLogOnServe(w io.Writer) func(TaskHost) {
 // This function should be registered on Interrupt.
 func ShutdownOnInterrupt(su *Supervisor, shutdownTimeout time.Duration) func() {
 	return func() {
+		// todo 这里的context.TODO()是原生的，我记得context.TODO()是没有什么特殊的意义,到时去看看
+		// todo 了解下context.WithTimeout 的cancel的作用
 		ctx, cancel := context.WithTimeout(context.TODO(), shutdownTimeout)
 		defer cancel()
+		// 这里通过su.Shutdown让su.shouldWait的地址值为key的value为1，然后协程各种执行之前定义的onShutdown的[]func()
+		// 然后真实的原生server进行shutdown
 		su.Shutdown(ctx)
+		//判断是否 su.shouldWait是否为1，如果是1则取消这个点，用unblockChan顶替
+		// todo 这里的unblockChan只能在supervise取消掉，是因为反正关闭了，无所谓了是吗？
 		su.RestoreFlow()
 	}
 }

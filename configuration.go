@@ -362,6 +362,9 @@ func WithOtherValue(key string, val interface{}) Configurator {
 type Configuration struct {
 	// vhost is private and setted only with .Run method, it cannot be changed after the first set.
 	// It can be retrieved by the context if needed (i.e router for subdomains)
+	// 是私有的(首字母小写)且只有在.Run()中被设置，且只能设置一次
+	// 在路由是有子域的时候，可以在context获取
+	// todo 这个vhost有什么作用？（估计要看netUtil.ResolveVHost())
 	vhost string
 
 	// IgnoreServerErrors will cause to ignore the matched "errors"
@@ -380,12 +383,15 @@ type Configuration struct {
 	// DisableStartupLog if setted to true then it turns off the write banner on server startup.
 	//
 	// Defaults to false.
+	// 默认是false，如果设置为true，则表示启动服务的时候，不会再控制台输出
 	DisableStartupLog bool `json:"disableStartupLog,omitempty" yaml:"DisableStartupLog" toml:"DisableStartupLog"`
+
 	// DisableInterruptHandler if setted to true then it disables the automatic graceful server shutdown
 	// when control/cmd+C pressed.
 	// Turn this to true if you're planning to handle this by your own via a custom host.Task.
 	//
 	// Defaults to false.
+	// 默认是false，如果是true，则表示服务不能自己手动停止，除非你自己通过一个自定义的host.Task停止
 	DisableInterruptHandler bool `json:"disableInterruptHandler,omitempty" yaml:"DisableInterruptHandler" toml:"DisableInterruptHandler"`
 
 	// DisablePathCorrection corrects and redirects or executes directly the handler of

@@ -231,6 +231,8 @@ func (su *Supervisor) supervise(blockFunc func() error) error {
 	su.notifyServe(host)
 	// 这里通过回调来判断是否原生的http.Server是否执行完成
 	// blockFunc有两种，一个是su.Server.ListenAndServeTLS("", "")，一个是su.Server.Serve(l)
+	// 真实的服务启动在blockFunc()，那上面拿supervisor创建taskHost是什么用意?
+	// 是为了执行supervisor 中的 OnServe[]func(TaskHost)
 	err := blockFunc()
 
 	// 这里进行对要展示错误的处理
@@ -266,6 +268,7 @@ func (su *Supervisor) supervise(blockFunc func() error) error {
 // Serve always returns a non-nil error. After Shutdown or Close, the
 // returned error is http.ErrServerClosed.
 //
+//内部其实就是原生的server.Serve()
 func (su *Supervisor) Serve(l net.Listener) error {
 	return su.supervise(func() error { return su.Server.Serve(l) })
 }

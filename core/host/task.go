@@ -46,6 +46,8 @@ func ShutdownOnInterrupt(su *Supervisor, shutdownTimeout time.Duration) func() {
 // TaskHost contains all the necessary information
 // about the host supervisor, its server
 // and the exports the whole flow controller of it.
+// TaskHost存储所有的host supervisor的重要信息，服务以及输出所有的控制流
+// todo 这个哪里显示出控制流
 type TaskHost struct {
 	Supervisor *Supervisor
 }

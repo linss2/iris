@@ -8,6 +8,7 @@ import (
 
 // IsTLS returns true if the "srv" contains any certificates
 // or a get certificate function, meaning that is secure.
+// 如果srv包含证书(srv.TLSConfig 这个字段)且cfg中的Certificates不为0且不为nil，则表示安全(这个方法则是安全认证)
 func IsTLS(srv *http.Server) bool {
 	if cfg := srv.TLSConfig; cfg != nil &&
 		(len(cfg.Certificates) > 0 || cfg.GetCertificate != nil) {

@@ -35,10 +35,12 @@ var (
 
 // repository passed to all parties(subrouters), it's the object witch keeps
 // all the routes.
+//repository表示所有的路由
 type repository struct {
 	routes []*Route
 }
 
+//注册route，即只要method以及subdomain以及tmpl.Src()不一致，则可以，如果重复，则取第一个
 func (r *repository) register(route *Route) {
 	for _, r := range r.routes {
 		if r.String() == route.String() {
@@ -66,37 +68,53 @@ func (r *repository) getAll() []*Route {
 // and child routers.
 type APIBuilder struct {
 	// the api builder global macros registry
+	// 全局的macros注册
 	macros *macro.Macros
+
 	// the api builder global handlers per status code registry (used for custom http errors)
+	// 针对每一个状态码的全局的Handler
 	errorCodeHandlers *ErrorCodeHandlers
+
 	// the api builder global routes repository
+	// 表示全局的routes
 	routes *repository
+
 	// the api builder global route path reverser object
 	// used by the view engine but it can be used anywhere.
+	// todo 这个有些不理解
 	reverser *RoutePathReverser
+
 	// the api builder global errors, can be filled by the Subdomain, WildcardSubdomain, Handle...
 	// the list of possible errors that can be
 	// collected on the build state to log
 	// to the end-user.
+	// todo 这个有些不理解（预计这是有错误了后才进行赋值)
 	reporter *errors.Reporter
 
 	// the per-party handlers, order
 	// of handlers registration matters.
+	// 表示每个Party要处理的middleware
 	middleware context.Handlers
+
 	// the global middleware handlers, order of call doesn't matters, order
 	// of handlers registration matters. We need a secondary field for this
 	// because `UseGlobal` registers handlers that should be executed
 	// even before the `middleware` handlers, and in the same time keep the order
 	// of handlers registration, so the same type of handlers are being called in order.
+	// 这里另加一个字段是疑问UserGlobal注册的应该在`middleware`handlers之前，不用考虑顺序
 	beginGlobalHandlers context.Handlers
 
 	// the per-party done handlers, order matters.
+	// 表示每一个party结束要执行的，要考虑顺序，这个和middleware对应
 	doneHandlers context.Handlers
+
 	// global done handlers, order doesn't matter.
+	// 与beginGlobalHandlers同理
 	doneGlobalHandlers context.Handlers
 
 	// the per-party
 	relativePath string
+
 	// allowMethods are filled with the `AllowMethods` func.
 	// They are used to create new routes
 	// per any party's (and its children) routes registered
@@ -104,6 +122,8 @@ type APIBuilder struct {
 	allowMethods []string
 
 	// the per-party (and its children) execution rules for begin, main and done handlers.
+	// 每一个party以及他的孩子在begin、main、done的执行规则
+	// todo 这个不了解
 	handlerExecutionRules ExecutionRules
 }
 
@@ -112,6 +132,7 @@ var _ RoutesProvider = (*APIBuilder)(nil) // passed to the default request handl
 
 // NewAPIBuilder creates & returns a new builder
 // which is responsible to build the API and the router handler.
+// 创建一个初始化的APIBuilder
 func NewAPIBuilder() *APIBuilder {
 	api := &APIBuilder{
 		macros:            macro.Defaults,
@@ -128,16 +149,19 @@ func NewAPIBuilder() *APIBuilder {
 // i.e:
 // if r := app.Party("/users"), then the `r.GetRelPath()` is the "/users".
 // if r := app.Party("www.") or app.Subdomain("www") then the `r.GetRelPath()` is the "www.".
+//返回相对路径的数据
 func (api *APIBuilder) GetRelPath() string {
 	return api.relativePath
 }
 
 // GetReport returns an error may caused by party's methods.
+// 返回请求中产生的错误的数据
 func (api *APIBuilder) GetReport() error {
 	return api.reporter.Return()
 }
 
 // GetReporter returns the reporter for adding errors
+// 通过这个方式获得Reporter来添加数据
 func (api *APIBuilder) GetReporter() *errors.Reporter {
 	return api.reporter
 }
@@ -147,6 +171,7 @@ func (api *APIBuilder) GetReporter() *errors.Reporter {
 // duplicates are not registered.
 //
 // Call of `AllowMethod` will override any previous allow methods.
+// 使用这个方法会覆盖之前所有的例如Handle、Get、Post所顺带的方法
 func (api *APIBuilder) AllowMethods(methods ...string) Party {
 	api.allowMethods = methods
 	return api
@@ -162,11 +187,14 @@ func (api *APIBuilder) AllowMethods(methods ...string) Party {
 //   Main:  iris.ExecutionOptions{Force: true},
 //   Done:  iris.ExecutionOptions{Force: true},
 // })
+// 修改了执行规则，比如begin、main、done这类，原本之间要通过ctx.Next()来执行，现在没有ctx.Next()也可以执行
 //
 // Note that if : true then the only remained way to "break" the handler chain is by `ctx.StopExecution()` now that `ctx.Next()` does not matter.
+// 现在这种链式Handle只有通过ctx.StopExecution()才行
 //
 // These rules are per-party, so if a `Party` creates a child one then the same rules will be applied to that as well.
 // Reset of these rules (before `Party#Handle`) can be done with `Party#SetExecutionRules(iris.ExecutionRules{})`.
+// 这个规则是针对某个party,且party的子的也遵守这个规则，不过可以通过SetExecutionRules(iris.ExecutionRules{})来重置
 //
 // The most common scenario for its use can be found inside Iris MVC Applications;
 // when we want the `Done` handlers of that specific mvc app's `Party`
@@ -175,6 +203,7 @@ func (api *APIBuilder) AllowMethods(methods ...string) Party {
 // Returns this Party.
 //
 // Example: https://github.com/kataras/iris/tree/master/_examples/mvc/middleware/without-ctx-next
+// 设置是为了修改route.handlers的执行流
 func (api *APIBuilder) SetExecutionRules(executionRules ExecutionRules) Party {
 	api.handlerExecutionRules = executionRules
 	return api
@@ -184,12 +213,14 @@ func (api *APIBuilder) SetExecutionRules(executionRules ExecutionRules) Party {
 // if empty method is passed then handler(s) are being registered to all methods, same as .Any.
 //
 // Returns a *Route, app will throw any errors later on.
+// method为""，表示任何方法
 func (api *APIBuilder) Handle(method string, relativePath string, handlers ...context.Handler) *Route {
 	// if relativePath[0] != '/' {
 	// 	return nil, errors.New("path should start with slash and should not be empty")
 	// }
 
 	if method == "" || method == "ALL" || method == "ANY" { // then use like it was .Any
+		// todo 这里第一个是Get，只取第一个？
 		return api.Any(relativePath, handlers...)[0]
 	}
 
@@ -197,12 +228,13 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 	// but remove the first slash if the relative has already ending with a slash
 	// it's not needed because later on we do normalize/clean the path, but better do it here too
 	// for any future updates.
+	// 虽然后期肯定要normalize/clean 相对路径，但是这里做也更好
+	// 注意第一个if是判断api.RelativePath最后是否是/，后面的if是判断relativePath
 	if api.relativePath[len(api.relativePath)-1] == '/' {
 		if relativePath[0] == '/' {
 			relativePath = relativePath[1:]
 		}
 	}
-
 	fullpath := api.relativePath + relativePath // for now, keep the last "/" if any,  "/xyz/"
 	if len(handlers) == 0 {
 		api.reporter.Add("missing handlers for route %s: %s", method, fullpath)
@@ -214,6 +246,7 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 	// So if we just put `api.middleware` or `api.doneHandlers`
 	// then the next `Party` will have those updated handlers
 	// but dev may change the rules for that child Party, so we have to make clones of them here.
+	// 将api.middleware以及api.doneHandlers重新拷贝了一份，分别对应beginHandlers和doneHandlers
 	var (
 		beginHandlers = joinHandlers(api.middleware, context.Handlers{})
 		doneHandlers  = joinHandlers(api.doneHandlers, context.Handlers{})
@@ -221,11 +254,14 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 
 	mainHandlers := context.Handlers(handlers)
 	// before join the middleware + handlers + done handlers and apply the execution rules.
+	//mainHandler的名称是mainHandler中的第一个
 	possibleMainHandlerName := context.HandlerName(mainHandlers[0])
 
+	// 默认中api.handlerExecutionRules中begin,main,down中的 Force都为false，所以直接return了
 	// TODO: for UseGlobal/DoneGlobal that doesn't work.
 	applyExecutionRules(api.handlerExecutionRules, &beginHandlers, &doneHandlers, &mainHandlers)
 
+	//这里开始将所有的handler进行整合，以begin、main、done排序
 	// global begin handlers -> middleware that are registered before route registration
 	// -> handlers that are passed to this Handle function.
 	routeHandlers := joinHandlers(beginHandlers, mainHandlers)
@@ -233,6 +269,8 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 	routeHandlers = joinHandlers(routeHandlers, doneHandlers)
 
 	// here we separate the subdomain and relative path
+	// 这里最常用的逻辑中subdomain返回的是fullpath[:slashIdx]
+	// todo 这里的subdomain需要考察下，比如api.relativePath不是以/开头的
 	subdomain, path := splitSubdomainAndPath(fullpath)
 
 	// if allowMethods are empty, then simply register with the passed, main, method.
@@ -251,6 +289,7 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 		}
 
 		// Add UseGlobal & DoneGlobal Handlers
+		// 这里使用use以及done来表示全局的
 		route.use(api.beginGlobalHandlers)
 		route.done(api.doneGlobalHandlers)
 
@@ -263,10 +302,12 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 
 // HandleMany works like `Handle` but can receive more than one
 // paths separated by spaces and returns always a slice of *Route instead of a single instance of Route.
+// relativePathorMulti通过" "分开
 //
 // It's useful only if the same handler can handle more than one request paths,
 // otherwise use `Party` which can handle many paths with different handlers and middlewares.
-//
+// 除了用party来通过不同的handler以及middleware来处理，或者是这个handler可以处理不同的请求path，可以看下面的例子
+
 // Usage:
 // 	app.HandleMany("GET", "/user /user/{id:uint64} /user/me", genericUserHandler)
 // At the other side, with `Handle` we've had to write:
@@ -280,7 +321,9 @@ func (api *APIBuilder) HandleMany(methodOrMulti string, relativePathorMulti stri
 	// at least slash
 	// a space
 	// at least one other slash for the next path
+	// 这个路径可以多个，通过" "隔开
 	paths := splitPath(relativePathorMulti)
+	// 方法也是可以多种，用" "隔开
 	methods := splitMethod(methodOrMulti)
 	for _, p := range paths {
 		if p != "" {
@@ -289,6 +332,7 @@ func (api *APIBuilder) HandleMany(methodOrMulti string, relativePathorMulti stri
 					method = "ANY"
 				}
 				if method == "ANY" || method == "ALL" {
+					//api.Any()就是将此时的路径以及handler以及所有的方法进行注册
 					routes = append(routes, api.Any(p, handlers...)...)
 					continue
 				}
@@ -304,9 +348,11 @@ func (api *APIBuilder) HandleMany(methodOrMulti string, relativePathorMulti stri
 // returns that new rich subrouter.
 //
 // You can even declare a subdomain with relativePath as "mysub." or see `Subdomain`.
+// 这个方法可以理解为设置父路由，从这里handlers是添加到middleware中(在handler()方法中可以看到middle是添加到beginHandler中的)
 func (api *APIBuilder) Party(relativePath string, handlers ...context.Handler) Party {
 	parentPath := api.relativePath
 	dot := string(SubdomainPrefix[0])
+	//如果relativePath是以.末尾的，然后parent是以"/"开头的，则要把parent开头的"/"去掉，因为后期是relativePath.parentPath
 	if len(parentPath) > 0 && parentPath[0] == '/' && strings.HasSuffix(relativePath, dot) {
 		// if ends with . , i.e admin., it's subdomain->
 		parentPath = parentPath[1:] // remove first slash
@@ -322,6 +368,8 @@ func (api *APIBuilder) Party(relativePath string, handlers ...context.Handler) P
 	// relativePath == "panel."
 	// then it should be panel.admin.
 	// instead of admin.panel.
+	// todo 如果 "/" 不是0,也算有subdomain?
+	// 注意，这两个是relativePath放前面，parentPath放后面
 	if hasSubdomain(parentPath) && hasSubdomain(relativePath) {
 		relativePath = relativePath + parentPath
 		parentPath = ""
@@ -335,6 +383,7 @@ func (api *APIBuilder) Party(relativePath string, handlers ...context.Handler) P
 	allowMethods := make([]string, len(api.allowMethods))
 	copy(allowMethods, api.allowMethods)
 
+	//一开始如果是通过iris.New()产生的类型通过Party，其routers为new(repository)
 	return &APIBuilder{
 		// global/api builder
 		macros:              api.macros,
@@ -368,6 +417,7 @@ func (api *APIBuilder) Party(relativePath string, handlers ...context.Handler) P
 // })
 //
 // Look `Party` for more.
+//这样的方式来实现接口回调，把具体的路由实现让其自己实现
 func (api *APIBuilder) PartyFunc(relativePath string, partyBuilderFunc func(p Party)) Party {
 	p := api.Party(relativePath)
 	partyBuilderFunc(p)
@@ -380,7 +430,7 @@ func (api *APIBuilder) PartyFunc(relativePath string, partyBuilderFunc func(p Pa
 // If called from a child party then the subdomain will be prepended to the path instead of appended.
 // So if app.Subdomain("admin").Subdomain("panel") then the result is: "panel.admin.".
 func (api *APIBuilder) Subdomain(subdomain string, middleware ...context.Handler) Party {
-	if api.relativePath == SubdomainWildcardIndicator {
+	if api.relativePath == SubdomainWildcardIndicator { //"*."
 		// cannot concat wildcard subdomain with something else
 		api.reporter.Add("cannot concat parent wildcard subdomain with anything else ->  %s , %s",
 			api.relativePath, subdomain)
@@ -388,7 +438,7 @@ func (api *APIBuilder) Subdomain(subdomain string, middleware ...context.Handler
 	}
 	if l := len(subdomain); l < 1 {
 		return api
-	} else if subdomain[l-1] != '.' {
+	} else if subdomain[l-1] != '.' { //如果subdomain最后面不是'.',则要加上"."
 		subdomain += "."
 	}
 
@@ -399,6 +449,8 @@ func (api *APIBuilder) Subdomain(subdomain string, middleware ...context.Handler
 // a dynamic, wildcard(ed) subdomain. A dynamic subdomain is a subdomain which
 // can reply to any subdomain requests. Server will accept any subdomain
 // (if not static subdomain found) and it will search and execute the handlers of this party.
+// 表示注册一个动态的正则的子域,服务会接受任何的不是静态的子域，然后在当前的party查询并执行其handler
+// 所以这里的子域是"*."
 func (api *APIBuilder) WildcardSubdomain(middleware ...context.Handler) Party {
 	if hasSubdomain(api.relativePath) {
 		// cannot concat static subdomain with a dynamic one, wildcard should be at the root level
@@ -413,6 +465,7 @@ func (api *APIBuilder) WildcardSubdomain(middleware ...context.Handler) Party {
 // to register custom macros with their own parameter types and their macro functions for all routes.
 //
 // Learn more at:  https://github.com/kataras/iris/tree/master/_examples/routing/dynamic-path
+// 返回当前api所有的macros(macro可以理解为路由的限制器)
 func (api *APIBuilder) Macros() *macro.Macros {
 	return api.macros
 }
@@ -421,6 +474,7 @@ func (api *APIBuilder) Macros() *macro.Macros {
 // some of them can be changed at runtime some others not.
 //
 // Needs refresh of the router to Method or Path or Handlers changes to take place.
+// 获取当前api所有的路由
 func (api *APIBuilder) GetRoutes() []*Route {
 	return api.routes.getAll()
 }
@@ -433,11 +487,12 @@ func (api *APIBuilder) GetRoute(routeName string) *Route {
 
 // GetRouteReadOnly returns the registered "read-only" route based on its name, otherwise nil.
 // One note: "routeName" should be case-sensitive. Used by the context to get the current route.
-// It returns an interface instead to reduce wrong usage and to keep the decoupled design between
+// It returns an interface instead to reduce wrong usage and to keep the decoupled(隔断) design between
 // the context and the routes.
 // Look `GetRoutesReadOnly` to fetch a list of all registered routes.
 //
 // Look `GetRoute` for more.
+// 这里就是根据你所得到的路由名称，然后通过routeReadOnlyWrapper封装（这里的context.RouteReadOnly是interface，来进行对程序的保护)
 func (api *APIBuilder) GetRouteReadOnly(routeName string) context.RouteReadOnly {
 	r := api.GetRoute(routeName)
 	if r == nil {
@@ -454,6 +509,7 @@ func (api *APIBuilder) GetRouteReadOnly(routeName string) context.RouteReadOnly 
 // safe fetch between context(request-state) and the builded application.
 //
 // Look `GetRouteReadOnly` too.
+// 这里大致和GetRouteReadOnly(routeName string)类似
 func (api *APIBuilder) GetRoutesReadOnly() []context.RouteReadOnly {
 	routes := api.GetRoutes()
 	readOnlyRoutes := make([]context.RouteReadOnly, len(routes))
@@ -472,6 +528,7 @@ func (api *APIBuilder) GetRoutesReadOnly() []context.RouteReadOnly {
 // If it's called after the routes then these handlers will never be executed.
 // Use `UseGlobal` if you want to register begin handlers(middleware)
 // that should be always run before all application's routes.
+// 这就是在api中的middleware 按顺序添加handler，即在某个路由的begin添加(其子也是有的),如果是全局的，则要用UserGlobal
 func (api *APIBuilder) Use(handlers ...context.Handler) {
 	api.middleware = append(api.middleware, handlers...)
 }
@@ -485,6 +542,7 @@ func (api *APIBuilder) Use(handlers ...context.Handler) {
 // The difference from `.DoneGLobal` is that this/or these Handler(s) are being always running first.
 // Use of `ctx.Next()` of those handler(s) is necessary to call the main handler or the next middleware.
 // It's always a good practise to call it right before the `Application#Run` function.
+//则在当前的每一个路由用use（看来具体的路由实现是通过路由里的beginHandlers来运行,而APIBUilder中的beginGolbalHandlers只是拿来记录)
 func (api *APIBuilder) UseGlobal(handlers ...context.Handler) {
 	for _, r := range api.routes.routes {
 		r.use(handlers) // prepend the handlers to the existing routes
@@ -498,8 +556,9 @@ func (api *APIBuilder) UseGlobal(handlers ...context.Handler) {
 // Call order matters, it should be called right before the routes that they care about these handlers.
 //
 // The difference from .Use is that this/or these Handler(s) are being always running last.
+// 这个与Use()同理
 func (api *APIBuilder) Done(handlers ...context.Handler) {
-	api.doneHandlers = append(api.doneHandlers, handlers...)
+api.doneHandlers = append(api.doneHandlers, handlers...)
 }
 
 // DoneGlobal registers handlers that should run at the very end.
@@ -511,6 +570,7 @@ func (api *APIBuilder) Done(handlers ...context.Handler) {
 // The difference from `.UseGlobal` is that this/or these Handler(s) are being always running last.
 // Use of `ctx.Next()` at the previous handler is necessary.
 // It's always a good practise to call it right before the `Application#Run` function.
+// 这个与UseGlobal同理
 func (api *APIBuilder) DoneGlobal(handlers ...context.Handler) {
 	for _, r := range api.routes.routes {
 		r.done(handlers) // append the handlers to the existing routes
@@ -524,6 +584,7 @@ func (api *APIBuilder) DoneGlobal(handlers ...context.Handler) {
 // Note that the `Reset` will not reset the handlers that are registered via `UseGlobal` & `DoneGlobal`.
 //
 // Returns this Party.
+// 重置了middleware、doneHandlers以及handler执行规则，但是不会重置Global
 func (api *APIBuilder) Reset() Party {
 	api.middleware = api.middleware[0:0]
 	api.doneHandlers = api.doneHandlers[0:0]
@@ -537,6 +598,7 @@ func (api *APIBuilder) Reset() Party {
 // Offline(handleResultRouteInfo)
 //
 // Returns a *Route and an error which will be filled if route wasn't registered successfully.
+// 就是针对掉线的路由
 func (api *APIBuilder) None(relativePath string, handlers ...context.Handler) *Route {
 	return api.Handle(MethodNone, relativePath, handlers...)
 }
@@ -544,6 +606,7 @@ func (api *APIBuilder) None(relativePath string, handlers ...context.Handler) *R
 // Get registers a route for the Get http method.
 //
 // Returns a *Route and an error which will be filled if route wasn't registered successfully.
+//针对get的路由
 func (api *APIBuilder) Get(relativePath string, handlers ...context.Handler) *Route {
 	return api.Handle(http.MethodGet, relativePath, handlers...)
 }
@@ -606,6 +669,7 @@ func (api *APIBuilder) Trace(relativePath string, handlers ...context.Handler) *
 
 // Any registers a route for ALL of the http methods
 // (Get,Post,Put,Head,Patch,Options,Connect,Delete).
+// 这是根据固定的relativePath的所有的方法产生的路由
 func (api *APIBuilder) Any(relativePath string, handlers ...context.Handler) (routes []*Route) {
 	for _, m := range AllMethods {
 		r := api.HandleMany(m, relativePath, handlers...)
@@ -615,6 +679,7 @@ func (api *APIBuilder) Any(relativePath string, handlers ...context.Handler) (ro
 	return
 }
 
+//先进行注册了Head方法的方式，不过返回的时候，是使用Get的路由
 func (api *APIBuilder) registerResourceRoute(reqPath string, h context.Handler) *Route {
 	api.Head(reqPath, h)
 	return api.Get(reqPath, h)
@@ -637,6 +702,8 @@ func (api *APIBuilder) registerResourceRoute(reqPath string, h context.Handler) 
 // mySubdomainFsServer.Get("/static", h)
 // ...
 //
+//返回新的handler用来处理所有的类型的静态文件
+// todo
 func (api *APIBuilder) StaticHandler(systemPath string, showList bool, gzip bool) context.Handler {
 	// Note: this doesn't need to be here but we'll keep it for consistently
 	return StaticHandler(systemPath, showList, gzip)
@@ -764,7 +831,7 @@ func (api *APIBuilder) Favicon(favPath string, requestPath ...string) *Route {
 		// we just interrupt with a message
 		// to the (user-defined) logger.
 		api.reporter.AddErr(errDirectoryFileNotFound.
-			Format(favPath, "favicon: couldn't read the data bytes for file: "+err.Error()))
+		Format(favPath, "favicon: couldn't read the data bytes for file: "+err.Error()))
 		return nil
 	}
 

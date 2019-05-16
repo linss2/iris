@@ -87,12 +87,18 @@ func joinPath(path1 string, path2 string) string {
 // cleanPath applies the following rules
 // iteratively until no further processing can be done:
 //
-//  1. Replace multiple slashes with a single slash.
+//  1. Replace multiple slashes(/) with a single slash.
+//  1. // -> /
 //  2. Replace '\' with '/'
+//  2. \ -> /
 //  3. Replace "\\" with '/'
+//  3. \\ -> /
 //  4. Ignore anything inside '{' and '}'
+//  4. 忽视{}里面的内容
 //  5. Makes sure that prefixed with '/'
+//  5. 保证以/开头
 //  6. Remove trailing '/'.
+//  6.
 //
 // The returned path ends in a slash only if it is the root "/".
 func cleanPath(s string) string {
@@ -193,6 +199,11 @@ const (
 	SubdomainPrefix = "./" // i.e subdomain./ -> Subdomain: subdomain. Path: /
 )
 
+//是否是subdomain的判断条件是
+//	1:有"/"
+//	2:以"."开始
+//  3:是以"*."开始
+//  4:末尾是'.'
 func hasSubdomain(s string) bool {
 	if s == "" {
 		return false

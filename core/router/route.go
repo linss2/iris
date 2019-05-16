@@ -13,24 +13,40 @@ import (
 // If any of the following fields are changed then the
 // caller should Refresh the router.
 type Route struct {
-	Name       string         `json:"name"`   // "userRoute"
-	Method     string         `json:"method"` // "GET"
-	methodBckp string         // if Method changed to something else (which is possible at runtime as well, via RefreshRouter) then this field will be filled with the old one.
+	Name   string         `json:"name"`   // "userRoute"
+	Method string         `json:"method"` // "GET"
+
+	//methodBckp用在route会变更method的时候记录旧的状态
+	methodBckp string                            // if Method changed to something else (which is possible at runtime as well, via RefreshRouter) then this field will be filled with the old one.
 	Subdomain  string         `json:"subdomain"` // "admin."
-	tmpl       macro.Template // Tmpl().Src: "/api/user/{id:uint64}"
+
+	// todo tmpl看其类型，是与macro有关
+	tmpl macro.Template // Tmpl().Src: "/api/user/{id:uint64}"
+
 	// temp storage, they're appended to the Handlers on build.
 	// Execution happens before Handlers, can be empty.
+	//表示路由实际运行逻辑前要运行的准备，在build的时候，比如准备什么代码逻辑
 	beginHandlers context.Handlers
+
 	// Handlers are the main route's handlers, executed by order.
 	// Cannot be empty.
-	Handlers        context.Handlers `json:"-"`
+	//主要的代码处理部分，不能为空 context.Handlers -> []Handler
+	Handlers context.Handlers `json:"-"`
+
+	//默认是主handlers的第一个handler的命名
 	MainHandlerName string           `json:"mainHandlerName"`
+
 	// temp storage, they're appended to the Handlers on build.
 	// Execution happens after Begin and main Handler(s), can be empty.
+	//表示路由实际运行逻辑后要运行的准备，在build的时候，比如一些资源的释放
 	doneHandlers context.Handlers
-	Path         string `json:"path"` // "/api/user/:id"
+
+	//路由路径
+	Path string `json:"path"` // "/api/user/:id"
+
 	// FormattedPath all dynamic named parameters (if any) replaced with %v,
 	// used by Application to validate param values of a Route based on its name.
+	// todo 这个是用于动态路径，不影响大致逻辑
 	FormattedPath string `json:"formattedPath"`
 }
 
@@ -39,9 +55,12 @@ type Route struct {
 // handlers and the macro container which all routes should share.
 // It parses the path based on the "macros",
 // handlers are being changed to validate the macros at serve time, if needed.
+// 程序刚运行的时候，APIBuilder.Handle()的时候调用的
 func NewRoute(method, subdomain, unparsedPath, mainHandlerName string,
 	handlers context.Handlers, macros macro.Macros) (*Route, error) {
 
+	//************这里开始处理path************
+	//todo 学习macro的处理
 	tmpl, err := macro.Parse(unparsedPath, macros)
 	if err != nil {
 		return nil, err
@@ -54,8 +73,10 @@ func NewRoute(method, subdomain, unparsedPath, mainHandlerName string,
 		macroEvaluatorHandler := handler.MakeHandler(tmpl)
 		handlers = append(context.Handlers{macroEvaluatorHandler}, handlers...)
 	}
-
+	//************处理好path，包括原始、macro等************
 	path = cleanPath(path) // maybe unnecessary here but who cares in this moment
+
+	//在_example/routing/basic/main.go中直接使用localhost:8080得到tmpl.Src="/"
 	defaultName := method + subdomain + tmpl.Src
 	formattedPath := formatPath(path)
 
@@ -73,12 +94,14 @@ func NewRoute(method, subdomain, unparsedPath, mainHandlerName string,
 	return route, nil
 }
 
-// use adds explicit begin handlers(middleware) to this route,
+// use adds explicit(明确的) begin handlers(middleware) to this route,
 // It's being called internally, it's useless for outsiders
 // because `Handlers` field is exported.
 // The callers of this function are: `APIBuilder#UseGlobal` and `APIBuilder#Done`.
 //
 // BuildHandlers should be called to build the route's `Handlers`.
+// 这个针对route增加前置中间件，使用`APIBuilder#UseGlobal` and `APIBuilder#Done`内部调用的是
+// 当前方法
 func (r *Route) use(handlers context.Handlers) {
 	if len(handlers) == 0 {
 		return
@@ -92,6 +115,7 @@ func (r *Route) use(handlers context.Handlers) {
 // The callers of this function are: `APIBuilder#UseGlobal` and `APIBuilder#Done`.
 //
 // BuildHandlers should be called to build the route's `Handlers`.
+//同理，与use(handlers context.Handlers)一样
 func (r *Route) done(handlers context.Handlers) {
 	if len(handlers) == 0 {
 		return
@@ -101,6 +125,8 @@ func (r *Route) done(handlers context.Handlers) {
 
 // ChangeMethod will try to change the HTTP Method of this route instance.
 // A call of `RefreshRouter` is required after this type of change in order to change to be really applied.
+//可以使用当前方法来修改当前路由实例的HTTP方法，在使用后要调用RefreshRouter才能生效
+//这里使用methodBckp字段来记录旧的method
 func (r *Route) ChangeMethod(newMethod string) bool {
 	if newMethod != r.Method {
 		r.methodBckp = r.Method
@@ -113,6 +139,7 @@ func (r *Route) ChangeMethod(newMethod string) bool {
 
 // SetStatusOffline will try make this route unavailable.
 // A call of `RefreshRouter` is required after this type of change in order to change to be really applied.
+// iris中有一个新的方法是None(变量是MethodNone)来表示让这个路由失效,同理使用后要调用RefreshRouter生效
 func (r *Route) SetStatusOffline() bool {
 	return r.ChangeMethod(MethodNone)
 }
@@ -122,6 +149,7 @@ func (r *Route) SetStatusOffline() bool {
 // Note if that you want to set status online for an offline registered route then you should call the `ChangeMethod` instead.
 // It will return true if the status restored, otherwise false.
 // A call of `RefreshRouter` is required after this type of change in order to change to be really applied.
+// 看内在代码就是将HTTP调用之前的method
 func (r *Route) RestoreStatus() bool {
 	return r.ChangeMethod(r.methodBckp)
 }
@@ -129,6 +157,9 @@ func (r *Route) RestoreStatus() bool {
 // BuildHandlers is executed automatically by the router handler
 // at the `Application#Build` state. Do not call it manually, unless
 // you were defined your own request mux handler.
+// 将所有的handler整合到Handler中，beginHanlers前，handlers中，doneHandlers后，然后清空begin和done
+// 在Application.Build()中被调用(不要自己手动调用，除非定义了自己的路由处理器)
+// 可以看例子_example/routing/custom-high-level-router的例子(看那例子，感觉是自己在拦截器中多套了一层)
 func (r *Route) BuildHandlers() {
 	if len(r.beginHandlers) > 0 {
 		r.Handlers = append(r.beginHandlers, r.Handlers...)
@@ -142,6 +173,7 @@ func (r *Route) BuildHandlers() {
 }
 
 // String returns the form of METHOD, SUBDOMAIN, TMPL PATH.
+//路由的名称以 方法名、子域、r.Tmpl().Src
 func (r Route) String() string {
 	return fmt.Sprintf("%s %s%s",
 		r.Method, r.Subdomain, r.Tmpl().Src)
@@ -161,6 +193,7 @@ func (r Route) Tmpl() macro.Template {
 
 // RegisteredHandlersLen returns the end-developer's registered handlers, all except the macro evaluator handler
 // if was required by the build process.
+//这方法是在Trace()被调用，而Trace()在handler.go中的build用golog.DEBUGF()调用
 func (r Route) RegisteredHandlersLen() int {
 	n := len(r.Handlers)
 	if handler.CanMakeHandler(r.tmpl) {
@@ -171,6 +204,7 @@ func (r Route) RegisteredHandlersLen() int {
 }
 
 // IsOnline returns true if the route is marked as "online" (state).
+//判断是否是可以访问到的路由
 func (r Route) IsOnline() bool {
 	return r.Method != MethodNone
 }
@@ -186,6 +220,8 @@ func (r Route) IsOnline() bool {
 // return "/%v/messages/%v"
 // we don't care about performance here, it's prelisten.
 func formatPath(path string) string {
+	//通过判断path是否有*或者:来进行处理，如果没有则直接返回
+	//todo 具体内容以后到macro再看
 	if strings.Contains(path, ParamStart) || strings.Contains(path, WildcardParamStart) {
 		var (
 			startRune         = ParamStart[0]
@@ -215,6 +251,7 @@ func formatPath(path string) string {
 // if /user/{id} it will return /user
 // if /user/{id}/friend/{friendid:uint64} it will return /user too
 // if /assets/{filepath:path} it will return /assets.
+//返回最左边的静态路径
 func (r Route) StaticPath() string {
 	src := r.tmpl.Src
 	bidx := strings.IndexByte(src, '{')
@@ -230,6 +267,8 @@ func (r Route) StaticPath() string {
 }
 
 // ResolvePath returns the formatted path's %v replaced with the args.
+// 通过参数将%v处理
+// todo 有关动态路由，以后再看
 func (r Route) ResolvePath(args ...string) string {
 	rpath, formattedPath := r.Path, r.FormattedPath
 	if rpath == formattedPath {
@@ -287,6 +326,7 @@ func (rd routeReadOnlyWrapper) Subdomain() string {
 	return rd.Route.Subdomain
 }
 
+//这里的path竟然是tmpl.Src返回的额?
 func (rd routeReadOnlyWrapper) Path() string {
 	return rd.Route.tmpl.Src
 }

@@ -1,11 +1,6 @@
 <component name="libraryTable">
   <library name="GOPATH &lt;iris&gt;">
     <CLASSES>
-      <root url="file://$PROJECT_DIR$/../mc-api" />
-      <root url="file://$PROJECT_DIR$/../iris-master 下午12.06.10" />
-      <root url="file://$PROJECT_DIR$/../mc-task" />
-      <root url="file://$PROJECT_DIR$/../reflect" />
-      <root url="file://$PROJECT_DIR$/../iris-base" />
       <root url="file://$PROJECT_DIR$/../mc-server" />
       <root url="file://$PROJECT_DIR$/../mc-core" />
       <root url="file://$PROJECT_DIR$/../.git" />
@@ -14,14 +9,14 @@
       <root url="file://$PROJECT_DIR$/../github.com" />
       <root url="file://$PROJECT_DIR$/../golang.org" />
       <root url="file://$PROJECT_DIR$/../cloud.google.com" />
+      <root url="file://$PROJECT_DIR$/../mc-api" />
+      <root url="file://$PROJECT_DIR$/../mc-task" />
+      <root url="file://$PROJECT_DIR$/../reflect" />
+      <root url="file://$PROJECT_DIR$/../kingshard" />
+      <root url="file://$PROJECT_DIR$/../iris-base" />
     </CLASSES>
     <JAVADOC />
     <SOURCES>
-      <root url="file://$PROJECT_DIR$/../mc-api" />
-      <root url="file://$PROJECT_DIR$/../iris-master 下午12.06.10" />
-      <root url="file://$PROJECT_DIR$/../mc-task" />
-      <root url="file://$PROJECT_DIR$/../reflect" />
-      <root url="file://$PROJECT_DIR$/../iris-base" />
       <root url="file://$PROJECT_DIR$/../mc-server" />
       <root url="file://$PROJECT_DIR$/../mc-core" />
       <root url="file://$PROJECT_DIR$/../.git" />
@@ -30,6 +25,11 @@
       <root url="file://$PROJECT_DIR$/../github.com" />
       <root url="file://$PROJECT_DIR$/../golang.org" />
       <root url="file://$PROJECT_DIR$/../cloud.google.com" />
+      <root url="file://$PROJECT_DIR$/../mc-api" />
+      <root url="file://$PROJECT_DIR$/../mc-task" />
+      <root url="file://$PROJECT_DIR$/../reflect" />
+      <root url="file://$PROJECT_DIR$/../kingshard" />
+      <root url="file://$PROJECT_DIR$/../iris-base" />
     </SOURCES>
     <excluded>
       <root url="file://$PROJECT_DIR$" />

@@ -5,6 +5,7 @@ package context
 // All methods that it contains should be "safe" to be called by the context
 // at "serve time". A configuration field may be missing when it's not
 // safe or its useless to be called from a request handler.
+// todo 问题:Configuration结构体已经实现，在Context所有的方法都必须是线程安全的,是因为接口命名只是可读,注释后面的几句是什么意思呢？
 type ConfigurationReadOnly interface {
 	// GetVHost returns the non-exported vhost config field.
 	//
@@ -18,6 +19,7 @@ type ConfigurationReadOnly interface {
 	// for example, if /home/ path is requested but no handler for this Route found,
 	// then the Router checks if /home handler exists, if yes,
 	// (permant)redirects the client to the correct path /home.
+	// 实现类的判断是否对一些错误的路由进行纠错
 	GetDisablePathCorrection() bool
 
 	// GetDisablePathCorrectionRedirection returns the Configuration#DisablePathCorrectionRedirection field.

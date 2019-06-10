@@ -105,8 +105,7 @@ func (su *Supervisor) Configure(configurators ...Configurator) *Supervisor {
 // host's server is "fixed".
 //
 // See `RestoreFlow` too.
-//DeferFlow 定义了当前的执行流，如果服务出现问题，其中一个任务就会调用DeferFlow
-// 可以等待RestoreFlow来退出，或者服务自己被修复
+// DeferFlow 定义了当前的执行流，如果服务出现问题，如果一个任务中调用DeferFlow了，可以等待RestoreFlow来退出，或者服务自己被修复
 // 通过su.shouldWait地址以及atomic.StoreInt32来保证
 // 这个暂时也只有测试用例调用
 func (su *Supervisor) DeferFlow() {
@@ -119,7 +118,7 @@ func (su *Supervisor) DeferFlow() {
 // See tests to understand how that can be useful on specific cases.
 //
 // See `DeferFlow` too.
-// 解除suprevisor的等待情况
+// 这个就是服务被系统中断信号中断的时候(比如cmd+C)，会调用的(task.go中ShutdownOnInterrupt执行), 解除suprevisor的等待情况
 func (su *Supervisor) RestoreFlow() {
 	if su.isWaiting() {
 		//如果supervisor是等待中，则解除shouldWait的情况，然后将unblockChan填充一个空结构表示supervisor为阻塞情况
@@ -142,7 +141,8 @@ func (su *Supervisor) newListener() (net.Listener, error) {
 	//
 	// User still be able to call .Serve instead.
 	// 这里表示服务中真实的调用某个服务的地址,返回net.Listener
-	// todo 学习netutil.TCPKeepAlive是怎么执行的
+	// 学习netutil.TCPKeepAlive是怎么执行的
+	// 里面的本质还是通过原生的net.Listen("tcp",addr)
 	l, err := netutil.TCPKeepAlive(su.Server.Addr)
 	if err != nil {
 		return nil, err
@@ -208,7 +208,7 @@ func (su *Supervisor) RegisterOnServe(cb func(TaskHost)) {
 	su.mu.Unlock()
 }
 
-// 通过同步锁
+// 在Supervisor中supervise()调用(有同步锁)
 func (su *Supervisor) notifyServe(host TaskHost) {
 	su.mu.Lock()
 	// onServe表示这个TaskHost所有要经过的方法
@@ -238,9 +238,11 @@ func (su *Supervisor) supervise(blockFunc func() error) error {
 	// 这里进行对要展示错误的处理
 	su.notifyErr(err)
 
-	// todo 啥时候会执行DeferFlow()
+	// 啥时候会执行DeferFlow()?
+	// 在实际代码中没有调用DeferFlow()，只有在测试用例调用，因此正常运行中不会进入到下面的情况
 	if su.isWaiting() {
-		//todo 这里表示如果一直在等待，这里为啥不一直死循环判断，非要用unblockChan的方式？
+		// 这里表示如果一直在等待，这里为啥不一直死循环判断，非要用unblockChan的方式？
+		// 实际代码中不会出现进入到这里的情况，因为唯一操作&su.shouldWait的DeferFlow()只有测试用例使用
 	blockStatement:
 		for {
 			select {
@@ -447,7 +449,7 @@ func (su *Supervisor) notifyShutdown() {
 // 然后无限制的等待之前的连接返回然后关闭。如果之前的在关闭完成前超时，也会报出错误
 //
 // shutdown不会阐释出关闭或等待劫持链接例如WebSocket，只等待那些存活长的链接然后等待去关闭
-// todo webSocket了解下
+// webSocket了解下 https://zh.wikipedia.org/wiki/WebSocket
 func (su *Supervisor) Shutdown(ctx context.Context) error {
 	atomic.AddInt32(&su.closedManually, 1) // future-use
 	su.notifyShutdown()

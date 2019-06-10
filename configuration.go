@@ -364,7 +364,7 @@ type Configuration struct {
 	// It can be retrieved by the context if needed (i.e router for subdomains)
 	// 是私有的(首字母小写)且只有在.Run()中被设置，且只能设置一次
 	// 在路由是有子域的时候，可以在context获取
-	// todo 这个vhost有什么作用？（估计要看netUtil.ResolveVHost())
+	// todo 问题:这个vhost有什么作用？（估计要看netUtil.ResolveVHost())
 	vhost string
 
 	// IgnoreServerErrors will cause to ignore the matched "errors"
@@ -403,6 +403,7 @@ type Configuration struct {
 	// See `DisablePathCorrectionRedirection` to enable direct handler execution instead of redirection.
 	//
 	// Defaults to false.
+	// 是否自动改正一些错误的路由(永久重定向到正确的路由,/home/ -> /home)，可以通过上面的example了解
 	DisablePathCorrection bool `json:"disablePathCorrection,omitempty" yaml:"DisablePathCorrection" toml:"DisablePathCorrection"`
 
 	// DisablePathCorrectionRedirection works whenever configuration.DisablePathCorrection is set to false
@@ -410,6 +411,7 @@ type Configuration struct {
 	// the last slash ("/") instead of send a redirection status.
 	//
 	// Defaults to false.
+	// todo 问题:这个是与DisablePathCorrection配合，只有开启纠错,然后这个字段设置为true的话，则直接匹配消除最后的/而不是返回重定向的状态?(待考证)
 	DisablePathCorrectionRedirection bool `json:"disablePathCorrectionRedirection,omitempty" yaml:"DisablePathCorrectionRedirection" toml:"DisablePathCorrectionRedirection"`
 
 	// EnablePathEscape when is true then its escapes the path, the named parameters (if any).
@@ -423,12 +425,14 @@ type Configuration struct {
 	// projectName, _ := url.QueryUnescape(c.Param("project").
 	//
 	// Defaults to false.
+	// todo 问题:这个什么作用有些没理解,没看到哪里使用？
 	EnablePathEscape bool `json:"enablePathEscape,omitempty" yaml:"EnablePathEscape" toml:"EnablePathEscape"`
 
 	// EnableOptimization when this field is true
 	// then the application tries to optimize for the best performance where is possible.
 	//
 	// Defaults to false.
+	// todo 问题:什么作用没法理解，没看到哪里使用？
 	EnableOptimizations bool `json:"enableOptimizations,omitempty" yaml:"EnableOptimizations" toml:"EnableOptimizations"`
 	// FireMethodNotAllowed if it's true router checks for StatusMethodNotAllowed(405) and
 	//  fires the 405 error instead of 404

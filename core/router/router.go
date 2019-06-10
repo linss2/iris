@@ -19,12 +19,15 @@ type Router struct {
 
 	// not indeed but we don't to risk its usage by third-parties.
 	// 这个可以使用自己设置的路由(_examples/routing/custom-high-level-router/里面的例子可以知道)
+	// todo 通过handler.go中258行的处理，可以理解是走这里，所以看下Context.go
 	requestHandler RequestHandler // build-accessible, can be changed to define a custom router or proxy, used on RefreshRouter too.
 
-	// todo 这里什么意思有些不解?
+	// 这里什么意思有些不解?
+	// 在BuildRouter中看102行，可以看到mainHandler默认走RequestHandler那边过的
+	// 使用mainHandler的时候一般都是直接与原生的http.Server一起使用的时候
 	mainHandler http.HandlerFunc // init-accessible
 
-	// todo 这个暂时不理解
+	// 这个参数就是在进行mainHandler的时候多在前面封装了一层
 	wrapperFunc func(http.ResponseWriter, *http.Request, http.HandlerFunc)
 
 	// 这个第一次数据不知道是哪里来的,似乎一直都是nil
@@ -54,6 +57,8 @@ func (router *Router) RefreshRouter() error {
 //
 // 这里除了RefreshRouter使用外，还有哪里进行使用?
 // 这里要看GOPATH的代码会寻找到，是在iris.go中Build()中app.Router.BuildRouter(app.ContextPool, routerHandler, app.APIBuilder, false)
+// 这里的前提条件是Downgraded()是false，即没有降级
+// 如果走这里了，mainHandler也是走RequestHandler一样
 func (router *Router) BuildRouter(cPool *context.Pool, requestHandler RequestHandler, routesProvider RoutesProvider, force bool) error {
 
 	if requestHandler == nil {
@@ -96,7 +101,8 @@ func (router *Router) BuildRouter(cPool *context.Pool, requestHandler RequestHan
 
 	// the important
 	// 这里整体的意思是从池里取出Context，然后用于当前router的使用，然后在放回到池子中
-	// todo router.mainHandler什么时候被使用
+	// router.mainHandler什么时候被使用?
+	// 在这个Router方式兼容原生的Http.Server的时候,需要被使用
 	router.mainHandler = func(w http.ResponseWriter, r *http.Request) {
 		// todo context.Pool 的源码解析
 		ctx := cPool.Acquire(w, r)
@@ -121,8 +127,8 @@ func (router *Router) BuildRouter(cPool *context.Pool, requestHandler RequestHan
 //
 // Note: Downgrade will by-pass the Wrapper, the caller is responsible for everything.
 // Downgrade is thread-safe.
-// todo 这里有些不理解（第一反应通过自己新的额handlerFunc来进行服务降级)
-//
+// 这里有些不理解（第一反应通过自己新的额handlerFunc来进行服务降级)？
+// 这里的就是在直接使用原生http.Server的时候,可以调整具体的请求处理的方式
 func (router *Router) Downgrade(newMainHandler http.HandlerFunc) {
 	router.mu.Lock()
 	router.mainHandler = newMainHandler
@@ -130,7 +136,8 @@ func (router *Router) Downgrade(newMainHandler http.HandlerFunc) {
 }
 
 // Downgraded returns true if this router is downgraded.
-// todo 这个判断有些不理解，为啥requestHandler==nil
+// 这个判断有些不理解，为啥requestHandler==nil?
+// 这里表示只进行原生http.Server表示降级
 func (router *Router) Downgraded() bool {
 	return router.mainHandler != nil && router.requestHandler == nil
 }

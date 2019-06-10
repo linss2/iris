@@ -7,6 +7,8 @@ import (
 func main() {
 	app := iris.New()
 
+	//app.ConfigureHost表示针对app的配置(这里面的参数都是Supervisor)
+	//host.RegisterOnXxx()表示supervisor的配置
 	app.ConfigureHost(func(host *iris.Supervisor) { // <- HERE: IMPORTANT
 		// You can control the flow or defer something using some of the host's methods:
 		// host.RegisterOnError

@@ -98,6 +98,7 @@ type Context interface {
 	// 4. reset response writer to the http.ResponseWriter
 	// 5. reset request to the *http.Request
 	// and any other optional steps, depends on dev's application type.
+	// 每一个请求都会执行一次，需要为新的请求准备context的字段
 	BeginRequest(http.ResponseWriter, *http.Request)
 	// EndRequest is executing once after a response to the request was sent and this context is useless or released.
 	//
@@ -916,8 +917,10 @@ var _ Context = (*context)(nil)
 //
 // It's used by the router, developers may use that
 // to replace and execute handlers immediately.
+// Do的作用是给当前的Context设置全部的handlers，然后执行第一个handler
 func Do(ctx Context, handlers Handlers) {
 	if len(handlers) > 0 {
+		//给当前的context绑定请求路径的路由的Handler
 		ctx.SetHandlers(handlers)
 		handlers[0](ctx)
 	}
@@ -946,27 +949,44 @@ type Map map[string]interface{}
 //  | Context Implementation                                     |
 //  +------------------------------------------------------------+
 
+// 这里生成的就是每次HTTP请求当前应用生成的context（上下文环境，估计使用完就会返回）
 type context struct {
 	// the unique id, it's zero until `String` function is called,
 	// it's here to cache the random, unique context's id, although `String`
 	// returns more than this.
+	// 在String()调用前都是0，通过atomic.AddUint64(&lastCapturedContextID, 1)来实现，所以不会重复
 	id uint64
+
 	// the http.ResponseWriter wrapped by custom writer.
+	// todo 这个封装最全面的一个接口，需要学习为啥这么做
 	writer ResponseWriter
+
 	// the original http.Request
+	// 这个是golang原生的http.Request
 	request *http.Request
+
 	// the current route's name registered to this request path.
+	//当前对应的请求路径的路由名称
 	currentRouteName string
 
 	// the local key-value storage
-	params RequestParams  // url named parameters.
+	// RequestParams用来用于动态路径用的
+	params RequestParams // url named parameters.
+
+	// todo 这个暂时还不知道什么作用，是一个[]Key-Value结构
 	values memstore.Store // generic storage, middleware communication.
 
 	// the underline application app.
+	// todo 不知道是当前的Application的作用
 	app Application
+
 	// the route's handlers
+	// 可以说当前路由所绑定的Handlers
 	handlers Handlers
+
 	// the current position of the handler's chain
+	// 当前处理的handler在handler链中的位置
+	//todo 这里啥时候变更呢
 	currentHandlerIndex int
 }
 
@@ -975,6 +995,7 @@ type context struct {
 // to a custom one.
 //
 // This context is received by the context pool.
+// 在iris.go中的contextPool中返回的context实例
 func NewContext(app Application) Context {
 	return &context{app: app}
 }
@@ -995,7 +1016,9 @@ func (ctx *context) BeginRequest(w http.ResponseWriter, r *http.Request) {
 	ctx.params.Store = ctx.params.Store[0:0]
 	ctx.request = r
 	ctx.currentHandlerIndex = 0
+	// 这里的writer内在是response_writer.go中的responseWriter struct
 	ctx.writer = AcquireResponseWriter()
+	// 这里就是初始化了responseWriter的初始数据
 	ctx.writer.BeginResponse(w)
 }
 
@@ -1080,6 +1103,7 @@ func (ctx *context) SetCurrentRouteName(currentRouteName string) {
 
 // GetCurrentRoute returns the current registered "read-only" route that
 // was being registered to this request's path.
+//返回context
 func (ctx *context) GetCurrentRoute() RouteReadOnly {
 	return ctx.app.GetRouteReadOnly(ctx.currentRouteName)
 }
@@ -1090,6 +1114,7 @@ func (ctx *context) GetCurrentRoute() RouteReadOnly {
 //
 // It's used by the router, developers may use that
 // to replace and execute handlers immediately.
+// todo 这里只是给当前ctx设置Handlers 而且只执行第一个，啥时候执行接下来的呢?
 func (ctx *context) Do(handlers Handlers) {
 	Do(ctx, handlers)
 }
@@ -1213,6 +1238,7 @@ func DefaultNext(ctx Context) {
 // it should be used inside a middleware.
 //
 // Note: Custom context should override this method in order to be able to pass its own context.Context implementation.
+// todo 问题:这个什么时候被调用呢？？(这个用Context interface 的Next()查询会更好)
 func (ctx *context) Next() { // or context.Next(ctx)
 	Next(ctx)
 }
@@ -1225,19 +1251,23 @@ func (ctx *context) Next() { // or context.Next(ctx)
 //
 // Note that if no next handler found and handlers are missing then
 // it sends a Status Not Found (404) to the client and it stops the execution.
+// 判断保证之前设置的Handler链中是否还有下一个，如果有则返回true，
+// 如果没有, 当参数长度为0的时候，则返回false，会调用ctx.NotFound()和ctx.StopExecution(),表示请求头为404而且也把currentHandlerIndex 设置为-1表示没有接下来的handler了
+// 如果参数不为0，则重新设置handers，并执行第一个，然而这里没有重新设置currentHandlerIndex(该方法也只有在NextOrNotFound()一处调用，而且此时没有传参，所以这情况不会出现，直接再第二情况就返回了)
 func (ctx *context) NextOr(handlers ...Handler) bool {
-	if next := ctx.NextHandler(); next != nil {
+	// 这里是保证旧的能继续执行
+	if next := ctx.NextHandler(); next != nil { //如果有下一个，则直接执行下一个
 		next(ctx)
 		ctx.Skip() // skip this handler from the chain.
 		return true
 	}
-
+	// 这里表示的ctx.NotFound()就表示将请求头转换为404
 	if len(handlers) == 0 {
 		ctx.NotFound()
 		ctx.StopExecution()
 		return false
 	}
-
+	//todo 如果没有，则设置新的handlers，然后执行第一个,不过这里并没有更新currentIndex，而且也重新设置了Handlers，为啥不更新currentIndex？？更觉得是NextOr()这个接口还没有开放
 	ctx.Do(handlers)
 
 	return false
@@ -1247,11 +1277,15 @@ func (ctx *context) NextOr(handlers ...Handler) bool {
 // otherwise it sends a Status Not Found (404) to the client and stops the execution.
 //
 // Returns true if next handler exists and executed, otherwise false.
+// 判断原来的Handler链中是否还有为处理的Handler
+// todo 什么时候调用这个接口？？个人觉得这个接口也没有开放
 func (ctx *context) NextOrNotFound() bool { return ctx.NextOr() }
 
 // NextHandler returns (it doesn't execute) the next handler from the handlers chain.
 //
 // Use .Skip() to skip this handler if needed to execute the next of this returning handler.
+// 用NextHandler可以判断接下来是否还有没使用的Handler
+// todo 这里为啥不需要锁呢？
 func (ctx *context) NextHandler() Handler {
 	if ctx.IsStopped() {
 		return nil
@@ -1266,7 +1300,9 @@ func (ctx *context) NextHandler() Handler {
 
 // Skip skips/ignores the next handler from the handlers chain,
 // it should be used inside a middleware.
+// 这里的前提就已经保证了next!=nil的
 func (ctx *context) Skip() {
+	// 设置当前的Handler在Handler链的位置
 	ctx.HandlerIndex(ctx.currentHandlerIndex + 1)
 }
 

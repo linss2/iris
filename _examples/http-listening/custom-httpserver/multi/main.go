@@ -27,6 +27,9 @@ func main() {
 	//
 	// http://localhost:9090/
 	// http://localhost:9090/mypath
+	// 这里可以通过自定义的Application与原生的兼容
+	// Application字段中Router字段实现了Handler interface
+	// Handler interface ServeHTTP() 在Router里面是拿出mainHandler(具体的方式跳转到router.go 82行)
 	srv1 := &http.Server{Addr: ":9090", Handler: app}
 	go srv1.ListenAndServe()
 	println("Start a server listening on http://localhost:9090")

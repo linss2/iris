@@ -23,5 +23,6 @@ func main() {
 	// NOTE: This will not work on domains like this,
 	// use real whitelisted domain(or domains split by whitespaces)
 	// and a non-public e-mail instead.
+	// todo 问题:这个方式暂时不了解
 	app.Run(iris.AutoTLS(":443", "example.com", "mail@example.com"))
 }

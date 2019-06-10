@@ -48,6 +48,7 @@ func ShutdownOnInterrupt(su *Supervisor, shutdownTimeout time.Duration) func() {
 		su.Shutdown(ctx)
 		//判断是否 su.shouldWait是否为1，如果是1则取消这个点，用unblockChan顶替
 		// todo 这里的unblockChan只能在supervise取消掉，是因为反正关闭了，无所谓了是吗？
+		// todo supervisor中的shouldWait没有用上,shouldWait只用在了_test.go中,所以常规情况一直为0，因此也不会有操作unblockChan的情况
 		su.RestoreFlow()
 	}
 }
@@ -56,7 +57,8 @@ func ShutdownOnInterrupt(su *Supervisor, shutdownTimeout time.Duration) func() {
 // about the host supervisor, its server
 // and the exports the whole flow controller of it.
 // TaskHost存储所有的host supervisor的重要信息，服务以及输出所有的控制流
-// todo 这个哪里显示出控制流
+// 这个哪里显示出控制流?
+// 这里的意思估计实际的Supervisor中的onServer都要通过TaskHost来包一层
 type TaskHost struct {
 	Supervisor *Supervisor
 }

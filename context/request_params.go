@@ -12,6 +12,7 @@ import (
 // RequestParams is a key string - value string storage which
 // context's request dynamic path params are being kept.
 // Empty if the route is static.
+// 这是用于动态路径使用的，如果路径是静态的，则为empty
 type RequestParams struct {
 	memstore.Store
 }

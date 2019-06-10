@@ -14,6 +14,8 @@ import (
 // In order to manually manage what to do when app is interrupted,
 // We have to disable the default behavior with the option `WithoutInterruptHandler`
 // and register a new interrupt handler (globally, across all possible hosts).
+// 可以在应用被打断的时候，关闭默认的WithoutInterruptHandler，然后执行自定义的处理器
+// 在app.Run中添加iris.WithoutInterruptHandler参数来使默认的中断处理不会添加到interrupt 的onInterrupt []func()中
 func main() {
 	app := iris.New()
 

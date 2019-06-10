@@ -24,7 +24,8 @@ func main() {
 	target, _ := url.Parse("https://127.0.1:443")
 	go host.NewProxy("127.0.0.1:80", target).ListenAndServe()
 
+	dir:="./_examples/http-listening/listen-tls/"
 	// start the server (HTTPS) on port 443, this is a blocking func
-	app.Run(iris.TLS("127.0.0.1:443", "mycert.cert", "mykey.key"))
+	app.Run(iris.TLS("127.0.0.1:443", dir+"mycert.cert", dir+"mykey.key"))
 
 }

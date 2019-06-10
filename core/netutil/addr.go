@@ -153,7 +153,10 @@ func ResolveHostname(addr string) string {
 // and inside {{ url }} template funcs.
 // It should be the same as "browser's"
 // usually they removing :80 or :443.
-// todo 不知道这里的作用是啥(可以理解为虚拟主机)?
+// 问题:不知道这里的作用是啥(可以理解为虚拟主机)?
+// 解答:这里是configuration.go中Configuration struct 的vhost有关，即GetVhost(),具体的逻辑可以通过
+// context/configuration.go 中的ConfigurationReadOnly interface 的GetVHost()注释可知
+//
 // 如果在指定地址中端口是不需要的，可以获取这个主机名
 // 这里过滤一些特殊的情况，比如只有端口的
 func ResolveVHost(addr string) string {

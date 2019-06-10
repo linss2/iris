@@ -131,13 +131,16 @@ const MethodNone = "NONE"
 // It contains and handles all the necessary parts to create a fast web server.
 type Application struct {
 	// routing embedded | exposing APIBuilder's and Router's public API.
-	//todo 为啥APIBuilder这边直接使用了呢，而不是直接使用Router里面的RoutesProvider?
+	// 为啥APIBuilder这边直接使用了呢，而不是直接使用Router里面的RoutesProvider
+	// 这里有一个概念问题，这里RouterProvider虽然实现是APIBuilder，但是实际上这两个是不对等的,在Router中APIBuilder只有那种提供路由有关的信息
+	// 而这样就隐藏了很多信息
 	*router.APIBuilder
 	*router.Router
 	ContextPool *context.Pool
 
 	// config contains the configuration fields
 	// all fields defaults to something that is working, developers don't have to set it.
+	//Application的Configuration只有一个，通过ConfigurationReadOnly()获取
 	config *Configuration
 
 	// the golog logger instance, defaults to "Info" level messages (all except "Debug")
@@ -568,7 +571,6 @@ func (app *Application) NewHost(srv *http.Server) *host.Supervisor {
 		// when CTRL+C/CMD+C pressed.
 		// 关闭的时间是5秒
 		shutdownTimeout := 5 * time.Second
-		// todo 这里将会使用interrupt.go 的内容，之后再来看
 		host.RegisterOnInterrupt(host.ShutdownOnInterrupt(su, shutdownTimeout))
 		app.logger.Debugf("Host: register server shutdown on interrupt(CTRL+C/CMD+C)")
 	}
@@ -627,9 +629,12 @@ type Runner func(*Application) error
 // Look at the `ConfigureHost` too.
 //
 // See `Run` for more.
+// 在_example/http-listening/custom-listener/main.go 有使用例子
 func Listener(l net.Listener, hostConfigs ...host.Configurator) Runner {
 	return func(app *Application) error {
+		// todo 这里是获得虚拟的主机地址，但是怎么使用呢?
 		app.config.vhost = netutil.ResolveVHost(l.Addr().String())
+		// 下面部分与Addr()类似，只是Addr的listener是通过addr分析得出的
 		return app.NewHost(&http.Server{Addr: l.Addr().String()}).
 			Configure(hostConfigs...).
 			Serve(l)

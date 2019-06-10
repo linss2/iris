@@ -108,6 +108,8 @@ var rpool = sync.Pool{New: func() interface{} { return &responseWriter{} }}
 
 // AcquireResponseWriter returns a new *ResponseWriter from the pool.
 // Releasing is done automatically when request and response is done.
+// 从sync.Pool中获取一个新的responseWriter struct(123行)的结构
+// todo sync.Pool 的源码学习
 func AcquireResponseWriter() ResponseWriter {
 	return rpool.Get().(*responseWriter)
 }
@@ -119,14 +121,22 @@ func releaseResponseWriter(w ResponseWriter) {
 // ResponseWriter is the basic response writer,
 // it writes directly to the underline http.ResponseWriter
 type responseWriter struct {
+	// 原生的http.ResponseWriter
 	http.ResponseWriter
+
+	// http状态码
+	// todo 这里说的这个状态码将会被cache service使用?这是什么意思
 	statusCode int // the saved status code which will be used from the cache service
 	// statusCodeSent bool // reply header has been (logically) written | no needed any more as we have a variable to catch total len of written bytes
+
+	// 返回的字节流的字节数
 	written int // the total size of bytes were written
+
 	// yes only one callback, we need simplicity here because on FireStatusCode the beforeFlush events should NOT be cleared
 	// but the response is cleared.
 	// Sometimes is useful to keep the event,
 	// so we keep one func only and let the user decide when he/she wants to override it with an empty func before the FireStatusCode (context's behavior)
+	// todo 这里有些不理解？
 	beforeFlush func()
 }
 
@@ -148,6 +158,7 @@ func (w *responseWriter) Naive() http.ResponseWriter {
 
 // BeginResponse receives an http.ResponseWriter
 // and initialize or reset the response writer's field's values.
+// 这里接受的参数是原生的http.ResponseWriter，然后初始化了responseWriter
 func (w *responseWriter) BeginResponse(underline http.ResponseWriter) {
 	w.beforeFlush = nil
 	w.written = NoWritten
@@ -164,6 +175,7 @@ func (w *responseWriter) EndResponse() {
 
 // SetWritten sets manually a value for written, it can be
 // NoWritten(-1) or StatusCodeWritten(0), > 0 means body length which is useless here.
+// 这里的设置已经写的状态只有为NoWritten(-1)或StatusCodeWritten(0)
 func (w *responseWriter) SetWritten(n int) {
 	if n >= NoWritten && n <= StatusCodeWritten {
 		w.written = n
@@ -184,6 +196,7 @@ func (w *responseWriter) Written() int {
 // will trigger an implicit WriteHeader(http.StatusOK).
 // Thus explicit calls to WriteHeader are mainly used to
 // send error codes.
+//这个在context/context.go中的StatusCode使用
 func (w *responseWriter) WriteHeader(statusCode int) {
 	w.statusCode = statusCode
 }
@@ -191,7 +204,7 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 func (w *responseWriter) tryWriteHeader() {
 	if w.written == NoWritten { // before write, once.
 		w.written = StatusCodeWritten
-		w.ResponseWriter.WriteHeader(w.statusCode)
+		w.ResponseWriter.WriteHeader(w.statusCode)// 这里调用的是go原生
 	}
 }
 
@@ -213,7 +226,9 @@ func (w *responseWriter) tryWriteHeader() {
 // writing the response. However, such behavior may not be supported
 // by all HTTP/2 clients. Handlers should read before writing if
 // possible to maximize compatibility.
+// 当使用responseWrite调用Write()给客户端的时候
 func (w *responseWriter) Write(contents []byte) (int, error) {
+	// 如果written为noWrite(-1)的话，则通过原生的responseWriter的writeHead来填写状态值，并将written变为0
 	w.tryWriteHeader()
 	n, err := w.ResponseWriter.Write(contents)
 	w.written += n

@@ -167,8 +167,7 @@ func (h *routerHandler) HandleRequest(ctx context.Context) {
 	path := ctx.Path()
 	//ctx.Application().ConfigurationReadOnly()返回iris.Configuration,然后再调用GetDisablePathCorrection()
 	// DisablePathCorrection bool的解析可以看 Configuration struct的字段解析
-	// DisablePathCorrection就是表示如果 /home/这个没有指定的handler，如果/home 有，则使用/home 的handler
-	// (这个要DisablePathCorrection和DisablePathCorrectionRedirection一起配合)
+	// DisablePathCorrection就是表示如果 /home/这个没有指定的handler，如果/home 有，则使用/home 的handler(这个要DisablePathCorrection和DisablePathCorrectionRedirection一起配合)
 	if !ctx.Application().ConfigurationReadOnly().GetDisablePathCorrection() {
 
 		if len(path) > 1 && strings.HasSuffix(path, "/") {
@@ -181,6 +180,8 @@ func (h *routerHandler) HandleRequest(ctx context.Context) {
 			path = "/" + strings.Trim(path, "/")
 
 			r.URL.Path = path
+			// DisablePathCorrection和DisablePathCorrectionRedirection配合使用，才会返回客户端重定向的方式
+			// todo 暂时不知道这context的重定向会产生什么效果?
 			if !ctx.Application().ConfigurationReadOnly().GetDisablePathCorrectionRedirection() {
 				// do redirect, else continue with the modified path without the last "/".
 				url := r.URL.String()
@@ -188,11 +189,14 @@ func (h *routerHandler) HandleRequest(ctx context.Context) {
 				// Fixes https://github.com/kataras/iris/issues/921
 				// This is caused for security reasons, imagine a payment shop,
 				// you can't just permantly redirect a POST request, so just 307 (RFC 7231, 6.4.7).
+				// 如果重定向，且http方法是Post或Put的时候
 				if method == http.MethodPost || method == http.MethodPut {
+					// 这里是307，与302的区别是这里不允许修改请求方法，比如从Post变成Get(看RFC 7231 6.4.7解释)
+					// 这里这么改的理由可以看上面/issues/921就可以明白(因为有些http/1.0客户端在收到301的时候，重定向会使用Get方法)
 					ctx.Redirect(url, http.StatusTemporaryRedirect)
 					return
 				}
-
+				//否则直接使用永久的资源地址变更（这里是301)
 				ctx.Redirect(url, http.StatusMovedPermanently)
 
 				// RFC2616 recommends that a short note "SHOULD" be included in the

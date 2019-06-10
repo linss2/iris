@@ -17,12 +17,15 @@ import (
 // go away.
 //
 // A raw copy of standar library.
+// 这个是模仿原生的库 server.go 中tcpKeepAliveListener
 type tcpKeepAliveListener struct {
 	*net.TCPListener
 }
 
 // Accept accepts tcp connections aka clients.
+// 这里的写法也是跟原生的server.go 中Accept()一样
 func (l tcpKeepAliveListener) Accept() (c net.Conn, err error) {
+	// 这里也是使用
 	tc, err := l.AcceptTCP()
 	if err != nil {
 		return
@@ -41,7 +44,9 @@ var (
 )
 
 // TCP returns a new tcp(ipv6 if supported by network) and an error on failure.
+// 返回一个tcp链接(如果网络支持则是ipv6)和如果失败的话产生的错误
 func TCP(addr string) (net.Listener, error) {
+	//原生的net.Listen()在"ip", "ip4", "ip6"都是执行一个case
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, err
@@ -50,6 +55,7 @@ func TCP(addr string) (net.Listener, error) {
 }
 
 // TCPKeepAlive returns a new tcp keep alive Listener and an error on failure.
+// 返回一个新的长连接的TCP链接以及错误的时候返回一个错误
 func TCPKeepAlive(addr string) (ln net.Listener, err error) {
 	// if strings.HasPrefix(addr, "127.0.0.1") {
 	// 	// it's ipv4, use ipv4 tcp listener instead of the default ipv6. Don't.

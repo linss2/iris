@@ -34,6 +34,8 @@ func main() {
 	//
 	// http://localhost:8080
 	// wait 10 seconds and check your terminal.
+	// iris.Addr()里面的configureHost是专门针对iris.Addr产生的服务的，后期的iris.WithoutServerError(iris.ErrServerClosed)
+	// 是在这个application中的所有server通用的
 	app.Run(iris.Addr(":8080", configureHost), iris.WithoutServerError(iris.ErrServerClosed))
 
 	/*

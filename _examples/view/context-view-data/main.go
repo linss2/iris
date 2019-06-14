@@ -16,7 +16,7 @@ func main() {
 	// output startup banner and error logs on os.Stdout
 
 	// set the view engine target to ./templates folder
-	app.RegisterView(iris.HTML("./templates", ".html").Reload(true))
+	app.RegisterView(iris.HTML("./_examples/view/context-view-data/templates", ".html").Reload(true))
 
 	app.Use(func(ctx iris.Context) {
 		// set the title, current time and a layout in order to be used if and when the next handler(s) calls the .Render function

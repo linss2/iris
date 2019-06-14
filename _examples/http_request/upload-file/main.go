@@ -16,7 +16,7 @@ const maxSize = 5 << 20 // 5MB
 func main() {
 	app := iris.New()
 
-	app.RegisterView(iris.HTML("./templates", ".html"))
+	app.RegisterView(iris.HTML("./_examples/http_request/upload-file/templates", ".html"))
 
 	// Serve the upload_form.html to the client.
 	app.Get("/upload", func(ctx iris.Context) {

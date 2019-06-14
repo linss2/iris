@@ -1,6 +1,7 @@
 <component name="libraryTable">
   <library name="GOPATH &lt;iris&gt;">
     <CLASSES>
+      <root url="file://$PROJECT_DIR$/../xorm" />
       <root url="file://$PROJECT_DIR$/../mc-server" />
       <root url="file://$PROJECT_DIR$/../mc-core" />
       <root url="file://$PROJECT_DIR$/../.git" />
@@ -17,6 +18,7 @@
     </CLASSES>
     <JAVADOC />
     <SOURCES>
+      <root url="file://$PROJECT_DIR$/../xorm" />
       <root url="file://$PROJECT_DIR$/../mc-server" />
       <root url="file://$PROJECT_DIR$/../mc-core" />
       <root url="file://$PROJECT_DIR$/../.git" />

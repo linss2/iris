@@ -13,11 +13,13 @@ import (
 )
 
 // Param receives a parameter name prefixed with the ParamStart symbol.
+// 确保前缀是 ':'
 func Param(name string) string {
 	return prefix(name, ParamStart)
 }
 
 // WildcardParam receives a parameter name prefixed with the WildcardParamStart symbol.
+// 如果参数不是 ""，则保证其前缀是 '*'
 func WildcardParam(name string) string {
 	if len(name) == 0 {
 		return ""
@@ -45,6 +47,7 @@ func convertMacroTmplToNodePath(tmpl macro.Template) string {
 	return routePath
 }
 
+// 如果确保 s 的前缀是 prefix
 func prefix(s string, prefix string) string {
 	if !strings.HasPrefix(s, prefix) {
 		return prefix + s
@@ -98,7 +101,7 @@ func joinPath(path1 string, path2 string) string {
 //  5. Makes sure that prefixed with '/'
 //  5. 保证以/开头
 //  6. Remove trailing '/'.
-//  6.
+//  6. 删除尾部的 '/'
 //
 // The returned path ends in a slash only if it is the root "/".
 func cleanPath(s string) string {
@@ -118,6 +121,7 @@ func cleanPath(s string) string {
 	// If you're learning go through Iris I will ask you to ignore the
 	// following part, it's not the recommending way to do that,
 	// but it's understable to me.
+	// todo 这边说Macros不够稳定，可能会修改,Macro 想了解可以看下，Macro是针对{id:int}这种东西来处理的
 	var (
 		insideMacro = false
 		i           = -1
@@ -200,10 +204,10 @@ const (
 )
 
 //是否是subdomain的判断条件是
-//	1:有"/"
+//	1:存在"/"，但不是开头， xx/xx
 //	2:以"."开始
 //  3:是以"*."开始
-//  4:末尾是'.'
+//  4:末尾是'.'且长度大于2，/索引不是第一个
 func hasSubdomain(s string) bool {
 	if s == "" {
 		return false
@@ -227,12 +231,15 @@ func hasSubdomain(s string) bool {
 // an empty subdomain and the clean path.
 //
 // First return value is the subdomain, second is the path.
+// subdomain 是 /之前的字符串，即如果 fullPath 以 / 开头，则subdomain 为""
 func splitSubdomainAndPath(fullUnparsedPath string) (subdomain string, path string) {
 	s := fullUnparsedPath
 	if s == "" || s == "/" {
 		return "", "/"
 	}
 
+	// 这里似乎就是路由那里设置的path以及api_builder中的relativePath配合
+	// 这里的subdomain 意思就是 '/' 之前的值
 	slashIdx := strings.IndexByte(s, '/')
 	if slashIdx == 0 {
 		// no subdomain
@@ -295,6 +302,8 @@ type RoutePathReverser struct {
 // a routes provider, needed to get a route based on its name.
 // Options is required for the URL function.
 // See WithScheme and WithHost or WithServer.
+// 在iris.go 中如果app.View()的长度大于0，则可以调用这个，传进去的是API_Builder
+// 其中的RoutePathReverserOption 来处理 RoutePathReverser 修改的是其字段属性，比如vhost、vscheme
 func NewRoutePathReverser(apiRoutesProvider RoutesProvider, options ...RoutePathReverserOption) *RoutePathReverser {
 	ps := &RoutePathReverser{
 		provider: apiRoutesProvider,

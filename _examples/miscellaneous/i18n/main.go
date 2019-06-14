@@ -12,9 +12,10 @@ func newApp() *iris.Application {
 		Default:      "en-US",
 		URLParameter: "lang",
 		Languages: map[string]string{
-			"en-US": "./locales/locale_en-US.ini",
-			"el-GR": "./locales/locale_el-GR.ini",
-			"zh-CN": "./locales/locale_zh-CN.ini"}})
+			// 注意这里的"./""针对的是跟根项目的位置
+			"en-US": "./_examples/miscellaneous/i18n/locales/locale_en-US.ini",
+			"el-GR": "./_examples/miscellaneous/i18n/locales/locale_el-GR.ini",
+			"zh-CN": "./_examples/miscellaneous/i18n/locales/locale_zh-CN.ini"}})
 	app.Use(globalLocale)
 
 	app.Get("/", func(ctx iris.Context) {
@@ -46,8 +47,8 @@ func newApp() *iris.Application {
 		Default:      "en-US",
 		URLParameter: "lang",
 		Languages: map[string]string{
-			"en-US": "./locales/locale_multi_first_en-US.ini, ./locales/locale_multi_second_en-US.ini",
-			"el-GR": "./locales/locale_multi_first_el-GR.ini, ./locales/locale_multi_second_el-GR.ini"}})
+			"en-US": "./_examples/miscellaneous/i18n/locales/locale_multi_first_en-US.ini, ./_examples/miscellaneous/i18n/locales/locale_multi_second_en-US.ini",
+			"el-GR": "./_examples/miscellaneous/i18n/locales/locale_multi_first_el-GR.ini, ./_examples/miscellaneous/i18n/locales/locale_multi_second_el-GR.ini"}})
 
 	app.Get("/multi", multiLocale, func(ctx iris.Context) {
 		language := ctx.Values().GetString(ctx.Application().ConfigurationReadOnly().GetTranslateLanguageContextKey())

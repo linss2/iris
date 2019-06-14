@@ -33,6 +33,7 @@ type RequestHandler interface {
 type routerHandler struct {
 	//为啥是数组？因为第一个路径可能不一样
 	trees []*trie
+	//只有有其中一个route包含subDomain，则
 	hosts bool // true if at least one route contains a Subdomain.
 }
 
@@ -137,7 +138,11 @@ func (h *routerHandler) Build(provider RoutesProvider) error {
 		// build the r.Handlers based on begin and done handlers, if any.
 		//这就是之前的每个route通过routeHandle.build()来进行整合handler
 		r.BuildHandlers()
-		//todo hosts=true有什么额外的作用吗(看起来都是拿来判断代码的分支)
+		// 问题：hosts=true有什么额外的作用吗(看起来都是拿来判断代码的分支),判断的方式都是 hosts&&t.subdomain!=""？？？
+		// 解答：因为只要路由集合中有一个有subDomain，则就为true，此时就是为了区别出有路由是有subdomain的情况，可以说是一种过滤的功能
+		// 这里是专门来判断用特殊的路由相对路径的情况，比如有*. 之类的
+		// 这里的subDomain可以看handler.go中的Handle()方法，对应逻辑中的subDomain值
+		// todo 问题：不理解有subDomain实际中的作用
 		if r.Subdomain != "" {
 			h.hosts = true
 		}
@@ -149,7 +154,8 @@ func (h *routerHandler) Build(provider RoutesProvider) error {
 		//就是这里将路径转化为trie，来绑定
 		//routeHandler的build()并没有地方使用,所以真实的地点在哪里?
 		//实际上就是使用interface来调用，所以隐藏了
-		// todo 不过哪里代码实现的还需要寻找？
+		// 问题：不过哪里代码实现的还需要寻找？？
+		// 解答：这里 h 是APIBuilder
 		if err := h.addRoute(r); err != nil {
 			// node errors:
 			rp.Add("%v -> %s", err, r.String())
@@ -169,7 +175,7 @@ func (h *routerHandler) HandleRequest(ctx context.Context) {
 	// DisablePathCorrection bool的解析可以看 Configuration struct的字段解析
 	// DisablePathCorrection就是表示如果 /home/这个没有指定的handler，如果/home 有，则使用/home 的handler(这个要DisablePathCorrection和DisablePathCorrectionRedirection一起配合)
 	if !ctx.Application().ConfigurationReadOnly().GetDisablePathCorrection() {
-
+		// 删除末尾的 '/'
 		if len(path) > 1 && strings.HasSuffix(path, "/") {
 			// Remove trailing slash and client-permanent rule for redirection,
 			// if confgiuration allows that and path has an extra slash.
@@ -181,7 +187,8 @@ func (h *routerHandler) HandleRequest(ctx context.Context) {
 
 			r.URL.Path = path
 			// DisablePathCorrection和DisablePathCorrectionRedirection配合使用，才会返回客户端重定向的方式
-			// todo 暂时不知道这context的重定向会产生什么效果?
+			// 问题：暂时不知道这context的重定向会产生什么效果？？
+			// 解答：可以看Context.go 里面的 context 结构体（实现了 Context interface）可以明白，底层用了原生的 server.go 中的 Redirect)
 			if !ctx.Application().ConfigurationReadOnly().GetDisablePathCorrectionRedirection() {
 				// do redirect, else continue with the modified path without the last "/".
 				url := r.URL.String()
@@ -220,7 +227,8 @@ func (h *routerHandler) HandleRequest(ctx context.Context) {
 		if method != t.method {
 			continue
 		}
-		//todo 这里是判断路由中是否有子域
+		// 问题：这里是判断路由中是否有子域，这里的t是trie，看一下trie中的subdomain怎么生成的，应该也是APIBuilder中NewRoute()产生的？？？
+		// 解答：按一般的常规写法，这里的t.subdomain都为 "",除非一些特殊的，比如有用 *. 等等
 		if h.hosts && t.subdomain != "" {
 			//返回当前http请求的url
 			requestHost := ctx.Host()
@@ -251,6 +259,9 @@ func (h *routerHandler) HandleRequest(ctx context.Context) {
 				}
 				// continue to that, any subdomain is valid.
 			} else if !strings.HasPrefix(requestHost, t.subdomain) { // t.subdomain contains the dot.
+				// 这种情况是真的判断t.subdomain是否是requestHost的前缀，一般t.subdomain 到这里比较少见（或者是我不熟悉）
+				// 用了两层Party,一层是Party("test/home")，这里是为了hasSubDomain有第二个/，还有一个是Party("v1.")
+				// 此时生成的subDomain为v1.test ，path为/home，因此如果不符合则会跳过
 				continue
 			}
 		}

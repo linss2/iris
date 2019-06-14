@@ -81,14 +81,14 @@ type APIBuilder struct {
 
 	// the api builder global route path reverser object
 	// used by the view engine but it can be used anywhere.
-	// todo 这个有些不理解
-	reverser *RoutePathReverser
+	// todo 不知道这个会怎么用？解析的意思被View engine 使用，但是又可以任何地方使用
+	r *RoutePathReverser
 
 	// the api builder global errors, can be filled by the Subdomain, WildcardSubdomain, Handle...
 	// the list of possible errors that can be
 	// collected on the build state to log
 	// to the end-user.
-	// todo 这个有些不理解（预计这是有错误了后才进行赋值)
+	// 用于报告整个应用的错误信息
 	reporter *errors.Reporter
 
 	// the per-party handlers, order
@@ -123,7 +123,7 @@ type APIBuilder struct {
 
 	// the per-party (and its children) execution rules for begin, main and done handlers.
 	// 每一个party以及他的孩子在begin、main、done的执行规则
-	// todo 这个不了解
+	// 这是可以修改handler的执行规则，让其不用ctx.Next()也可以自动进行下去
 	handlerExecutionRules ExecutionRules
 }
 
@@ -220,7 +220,7 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 	// }
 
 	if method == "" || method == "ALL" || method == "ANY" { // then use like it was .Any
-		// todo 这里第一个是Get，只取第一个？
+		// 约等于调用Get
 		return api.Any(relativePath, handlers...)[0]
 	}
 
@@ -247,6 +247,7 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 	// then the next `Party` will have those updated handlers
 	// but dev may change the rules for that child Party, so we have to make clones of them here.
 	// 将api.middleware以及api.doneHandlers重新拷贝了一份，分别对应beginHandlers和doneHandlers
+	// middleware对应的是Begin
 	var (
 		beginHandlers = joinHandlers(api.middleware, context.Handlers{})
 		doneHandlers  = joinHandlers(api.doneHandlers, context.Handlers{})
@@ -259,6 +260,7 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 
 	// 默认中api.handlerExecutionRules中begin,main,down中的 Force都为false，所以直接return了
 	// TODO: for UseGlobal/DoneGlobal that doesn't work.
+	// 注意：这里并没有处理Global中的handler的情况
 	applyExecutionRules(api.handlerExecutionRules, &beginHandlers, &doneHandlers, &mainHandlers)
 
 	//这里开始将所有的handler进行整合，以begin、main、done排序
@@ -270,7 +272,14 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 
 	// here we separate the subdomain and relative path
 	// 这里最常用的逻辑中subdomain返回的是fullpath[:slashIdx]
-	// todo 这里的subdomain需要考察下，比如api.relativePath不是以/开头的
+	// subDomain是 fullPath 第一个'/'之前的字符串，而path是 '/'及其之后的字符串
+	// 问题：这里的subdomain需要考察下，比如api.relativePath不是以/开头的
+	// 解答：当使用Party后则是通过Party产生的 fullPath来当做 api.relativePath，可以说有点类似继承了APIBuilder生成的另一个
+	//
+	// 问题：啥时候fullPath的第一个字符不是'/' ？？？
+	// 解答：当用了两次Party，比如
+	// 用了两层Party,一层是Party("test/home")，这里是为了hasSubDomain有第二个/，还有一个是Party("v1.")
+	// 此时生成的subDomain为v1.test ，path为/home，fullPath是v1.test/home
 	subdomain, path := splitSubdomainAndPath(fullpath)
 
 	// if allowMethods are empty, then simply register with the passed, main, method.
@@ -282,6 +291,7 @@ func (api *APIBuilder) Handle(method string, relativePath string, handlers ...co
 	)
 
 	for _, m := range methods {
+		// 不是全局的，在routeHandlers中
 		route, err = NewRoute(m, subdomain, path, possibleMainHandlerName, routeHandlers, *api.macros)
 		if err != nil { // template path parser errors:
 			api.reporter.Add("%v -> %s:%s:%s", err, method, subdomain, path)
@@ -353,12 +363,14 @@ func (api *APIBuilder) Party(relativePath string, handlers ...context.Handler) P
 	parentPath := api.relativePath
 	dot := string(SubdomainPrefix[0])
 	//如果relativePath是以.末尾的，然后parent是以"/"开头的，则要把parent开头的"/"去掉，因为后期是relativePath.parentPath
+	// 这里的relativePath是用于设置路由的，没有包括host和port
 	if len(parentPath) > 0 && parentPath[0] == '/' && strings.HasSuffix(relativePath, dot) {
 		// if ends with . , i.e admin., it's subdomain->
 		parentPath = parentPath[1:] // remove first slash
 	}
 
 	// this is checked later on but for easier debug is better to do it here:
+	// 如果 父路径有最后有 / ，且相对路径以/开始，则相对路径删除第一个（这里默认的是没有交换的时候）
 	if api.relativePath[len(api.relativePath)-1] == '/' && relativePath[0] == '/' {
 		relativePath = relativePath[1:] // remove first slash if parent ended with / and new one started with /.
 	}
@@ -368,9 +380,24 @@ func (api *APIBuilder) Party(relativePath string, handlers ...context.Handler) P
 	// relativePath == "panel."
 	// then it should be panel.admin.
 	// instead of admin.panel.
-	// todo 如果 "/" 不是0,也算有subdomain?
-	// 注意，这两个是relativePath放前面，parentPath放后面
+	// 问题：如果 "/" 不是0,也算有subdomain？？
+	// 解答：看hasSubdomain()来看，有四种情况判断为subDomain
+	//
+	// 问题：还是不理解subDomain是什么概念？？
+	// 解答：就是日常的子域的功能，而且是在localhost的开头一致，即最小的域名
+	//
+	// 问题：为啥两者都是subDomain，则将原本的 parentPath+relativePath 换成 relativePath+parentPath
+	// 解答：真走域名就按域名格式走，比如域名的最上级在后面，子域名在前面
+	//
+	// hasSubdomain()为true的条件:
+	//	1:存在"/"，但不是开头， xx/xx
+	//	2:以"."开始
+	//  3:是以"*."开始
+	//  4:末尾是'.'且长度大于2，/索引不是第一个
+	// 要parentPath的开头不是 '/' ，则relativePath末尾为 .
+	// 一般的parentPath /test/home 只有在relativePath 是 xxx.才能
 	if hasSubdomain(parentPath) && hasSubdomain(relativePath) {
+		//	// 注意，这两个是relativePath放前面，parentPath放后面
 		relativePath = relativePath + parentPath
 		parentPath = ""
 	}
@@ -703,7 +730,7 @@ func (api *APIBuilder) registerResourceRoute(reqPath string, h context.Handler) 
 // ...
 //
 //返回新的handler用来处理所有的类型的静态文件
-// todo
+// todo 这是有关fs.go 中文件逻辑
 func (api *APIBuilder) StaticHandler(systemPath string, showList bool, gzip bool) context.Handler {
 	// Note: this doesn't need to be here but we'll keep it for consistently
 	return StaticHandler(systemPath, showList, gzip)

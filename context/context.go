@@ -36,6 +36,7 @@ import (
 type (
 	// BodyDecoder is an interface which any struct can implement in order to customize the decode action
 	// from ReadJSON and ReadXML
+	// BodyDecoder可以从ReadJSON和ReadXML中自定义解码行为
 	//
 	// Trivial example of this could be:
 	// type User struct { Username string }
@@ -51,12 +52,14 @@ type (
 	// for ReadJSON is the encoding/json and for ReadXML is the encoding/xml.
 	//
 	// Example: https://github.com/kataras/iris/blob/master/_examples/http_request/read-custom-per-type/main.go
+	// 看了例子表示，如果想自定义解析方式，可以对接受数据的struct，然后实现这个接口，iris.Context中UnmarshalBody中有使用
 	BodyDecoder interface {
 		Decode(data []byte) error
 	}
 
 	// Unmarshaler is the interface implemented by types that can unmarshal any raw data.
 	// TIP INFO: Any pointer to a value which implements the BodyDecoder can be override the unmarshaler.
+	// 注意：如果某些结构体也实现了这个接口（Unmarshaler）和BodyDecoder接口，则BodyCecoer接口则会被覆盖
 	Unmarshaler interface {
 		Unmarshal(data []byte, outPtr interface{}) error
 	}
@@ -93,10 +96,21 @@ type Context interface {
 	//
 	// To follow the iris' flow, developer should:
 	// 1. reset handlers to nil
+	// handlers 的数据类型是Handlers，Handlers的数据类型是 []Handler ，Handler的数据类型是 func(Context)
+
 	// 2. reset values to empty
+	// values 的数据类型是 memstore.Store
+
 	// 3. reset sessions to nil
+	// todo 这里的sessions为nil？？？
+
 	// 4. reset response writer to the http.ResponseWriter
+	// 这里是从rpool中重新拿取了一个一个responseWriter，这里的ResponseWriter不是原生的，而是原生封装起来的
+	// var rpool = sync.Pool{New: func() interface{} { return &responseWriter{} }}
+
 	// 5. reset request to the *http.Request
+	// 更新当前context的Request对象
+
 	// and any other optional steps, depends on dev's application type.
 	// 每一个请求都会执行一次，需要为新的请求准备context的字段
 	BeginRequest(http.ResponseWriter, *http.Request)
@@ -106,6 +120,7 @@ type Context interface {
 	// 1. flush the response writer's result
 	// 2. release the response writer
 	// and any other optional steps, depends on dev's application type.
+	//在iris代码中，的时候，通过cpool来进行release()调用中被调到
 	EndRequest()
 
 	// ResponseWriter returns an http.ResponseWriter compatible response writer, as expected.
@@ -125,9 +140,11 @@ type Context interface {
 	// Instead, to execute a different path
 	// from this context you should use the `Exec` function
 	// or change the handlers via `SetHandlers/AddHandler` functions.
+	// 如果在这个context实现不一样的路由的方式，需要通过Exec方法或者是通过SetHandlers/AddHandler来改变路由
 	SetCurrentRouteName(currentRouteName string)
 	// GetCurrentRoute returns the current registered "read-only" route that
 	// was being registered to this request's path.
+	// 这个方法只有测试用例调用
 	GetCurrentRoute() RouteReadOnly
 
 	// Do calls the SetHandlers(handlers)
@@ -158,11 +175,14 @@ type Context interface {
 	// current handler index without change the current index.
 	//
 	// Look Handlers(), Next() and StopExecution() too.
+	// 就是设置当前context的Handler位置
 	HandlerIndex(n int) (currentIndex int)
 	// Proceed is an alternative way to check if a particular handler
 	// has been executed and called the `ctx.Next` function inside it.
 	// This is useful only when you run a handler inside
 	// another handler. It justs checks for before index and the after index.
+	// Proceed 是另类的检查指定的handler是否被执行，并调用ctx.Next方法,只有在你的handler中存有另一个handler
+	// 才会有用，他只会检查前面的索引和后面的索引
 	//
 	// A usecase example is when you want to execute a middleware
 	// inside controller's `BeginRequest` that calls the `ctx.Next` inside it.
@@ -202,6 +222,7 @@ type Context interface {
 	// it should be used inside a middleware.
 	//
 	// Note: Custom context should override this method in order to be able to pass its own context.Context implementation.
+	// 调用Handler链接下来的handler，且如果自定义context，要重写这个接口方法
 	Next()
 	// NextOr checks if chain has a next handler, if so then it executes it
 	// otherwise it sets a new chain assigned to this Context based on the given handler(s)
@@ -211,37 +232,48 @@ type Context interface {
 	//
 	// Note that if no next handler found and handlers are missing then
 	// it sends a Status Not Found (404) to the client and it stops the execution.
+	// NextOr 会检验handler链是否还有下一个handler，如果有则调用，没有就设置新的handlers，并执行第一个handler，如果len(handlers)长度为0，则返回404，并停止当前的调用
 	NextOr(handlers ...Handler) bool
 	// NextOrNotFound checks if chain has a next handler, if so then it executes it
 	// otherwise it sends a Status Not Found (404) to the client and stops the execution.
 	//
 	// Returns true if next handler exists and executed, otherwise false.
+	// 这个内部就是直接NextOr()
 	NextOrNotFound() bool
 	// NextHandler returns (it doesn't execute) the next handler from the handlers chain.
 	//
 	// Use .Skip() to skip this handler if needed to execute the next of this returning handler.
+	// 这就是handler链中的下一个
 	NextHandler() Handler
 	// Skip skips/ignores the next handler from the handlers chain,
 	// it should be used inside a middleware.
+	// 将currentHandlerIndex+1
 	Skip()
 	// StopExecution if called then the following .Next calls are ignored,
 	// as a result the next handlers in the chain will not be fire.
+	// 这个调用了后，则.Next()方法则会被无视，实际是将currentHandlerIndex设置为-1，会让handler链接下来的handler都不能被调用
 	StopExecution()
 	// IsStopped checks and returns true if the current position of the Context is 255,
 	// means that the StopExecution() was called.
+	// 则判断是否StopExecution()是否被调用
 	IsStopped() bool
 	// OnConnectionClose registers the "cb" function which will fire (on its own goroutine, no need to be registered goroutine by the end-dev)
 	// when the underlying connection has gone away.
+	// OnConnectionCLose 注册一个回调函数，这个回调函数会在链接断开的时候执行（而且自己生成一个协程）
 	//
 	// This mechanism can be used to cancel long operations on the server
 	// if the client has disconnected before the response is ready.
+	// 这个机制可以被用在取消长操作，比如在应答前客户端以及取消链接了
 	//
 	// It depends on the `http#CloseNotify`.
 	// CloseNotify may wait to notify until Request.Body has been
 	// fully read.
+	// 这个取决于CloseNotify，CloseNotify等请求体被全部读取完后去notify
+	// todo CloseNotify去notify什么？？
 	//
 	// After the main Handler has returned, there is no guarantee
 	// that the channel receives a value.
+	// 当mainHandler全部返回，通过也没法保证有接收到值
 	//
 	// Finally, it reports whether the protocol supports pipelines (HTTP/1.1 with pipelines disabled is not supported).
 	// The "cb" will not fire for sure if the output value is false.
@@ -255,6 +287,8 @@ type Context interface {
 	// Note that you can register only one callback for the entire request handler chain/per route.
 	//
 	// Look the `Context#OnConnectionClose` and `ResponseWriter#SetBeforeFlush` for more.
+	// 这里就注册了一个回调函数，而且依次调用了ctx.OnConectionClose(cb)和ctx.writer.SetBeforeFlush()
+	// 这个暂时只有_example文件夹中调用
 	OnClose(cb func())
 
 	//  +------------------------------------------------------------+
@@ -266,6 +300,7 @@ type Context interface {
 	// Params returns the current url's named parameters key-value storage.
 	// Named path parameters are being saved here.
 	// This storage, as the whole Context, is per-request lifetime.
+	// Params 返回是当前的url中后面的参数保存在这里，本质是memstore.Store（k-v形式）
 	Params() *RequestParams
 
 	// Values returns the current "user" storage.
@@ -274,11 +309,13 @@ type Context interface {
 	//
 	// You can use this function to Set and Get local values
 	// that can be used to share information between handlers and middleware.
+	// 返回context中的 memstore.Store
 	Values() *memstore.Store
 	// Translate is the i18n (localization) middleware's function,
 	// it calls the Get("translate") to return the translated value.
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/miscellaneous/i18n
+	// 这个有关i18n，可以根据上面的例子配合学习
 	Translate(format string, args ...interface{}) string
 
 	//  +------------------------------------------------------------+
@@ -292,6 +329,7 @@ type Context interface {
 	Path() string
 	// RequestPath returns the full request path,
 	// based on the 'escape'.
+	// 这个根据传递的参数来觉得是否
 	RequestPath(escape bool) string
 
 	// Host returns the host part of the current url.
@@ -311,6 +349,7 @@ type Context interface {
 	// Look `Configuration.RemoteAddrHeaders`,
 	//      `Configuration.WithRemoteAddrHeader(...)`,
 	//      `Configuration.WithoutRemoteAddrHeader(...)` for more.
+	// 这个具体还是看context的实现方式
 	RemoteAddr() string
 	// GetHeader returns the request header's value based on its name.
 	GetHeader(name string) string
@@ -328,16 +367,21 @@ type Context interface {
 	//
 	// Read more at: https://developer.mozilla.org/en-US/docs/AJAX
 	// and https://xhr.spec.whatwg.org/
+	// 注意:这个方法不是百分百准去，因为可以ip欺骗，"X-Requested-With" Header可以被客户端修改，实现类就是判断
+	// GetHeader("X-Requested-With")=="XMLHttpRequest"
 	IsAjax() bool
 	// IsMobile checks if client is using a mobile device(phone or tablet) to communicate with this server.
 	// If the return value is true that means that the http client using a mobile
 	// device to communicate with the server, otherwise false.
 	//
 	// Keep note that this checks the "User-Agent" request header.
+	// 这个是通过User-Agent 的请求头来判断
 	IsMobile() bool
 	// GetReferrer extracts and returns the information from the "Referer" header as specified
 	// in https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy
 	// or by the URL query parameter "referer".
+	// 提取请求头"Referrer"来实现
+	// todo 问题:不知道Referrer如何使用？？？
 	GetReferrer() Referrer
 	//  +------------------------------------------------------------+
 	//  | Headers helpers                                            |
@@ -347,22 +391,28 @@ type Context interface {
 	Header(name string, value string)
 
 	// ContentType sets the response writer's header key "Content-Type" to the 'cType'.
+	// 将 cType 写到响应的Writer中的 Content-Type 请求头中
 	ContentType(cType string)
 	// GetContentType returns the response writer's header value of "Content-Type"
 	// which may, setted before with the 'ContentType'.
+	// 这个是返回响应值汇总的 Content-Type 请求头
 	GetContentType() string
 	// GetContentType returns the request's header value of "Content-Type".
+	// 这是返回Request中的 Content-Type
 	GetContentTypeRequested() string
 
 	// GetContentLength returns the request's header value of "Content-Length".
 	// Returns 0 if header was unable to be found or its value was not a valid number.
+	// 返回Request中的 Content-Length
 	GetContentLength() int64
 
 	// StatusCode sets the status code header to the response.
 	// Look .`GetStatusCode` too.
+	// 这是针对 iris 中 Context 中的 ResponseWriter 中的 Code
 	StatusCode(statusCode int)
 	// GetStatusCode returns the current status code of the response.
 	// Look `StatusCode` too.
+	// 返回上面StatusCode()社会的值
 	GetStatusCode() int
 
 	// Redirect sends a redirect response to the client
@@ -374,6 +424,8 @@ type Context interface {
 	// you can set it to 301 (Permant redirect)
 	// or 303 (StatusSeeOther) if POST method,
 	// or StatusTemporaryRedirect(307) if that's nessecery.
+	// 表示重定向的方式，前一个表达了重定向的地址，后一个表达状态码，虽然后面是变长参数，但是实现中只是用了第一个，
+	// 内在调用的是原生 server.go 中 http.Redirect
 	Redirect(urlToRedirect string, statusHeader ...int)
 
 	//  +------------------------------------------------------------+
@@ -381,18 +433,23 @@ type Context interface {
 	//  +------------------------------------------------------------+
 
 	// URLParam returns true if the url parameter exists, otherwise false.
+	// 判断url中的参数，通过 ctx.request.URL.Query() ，这里的 ctx.Request 是原生的 http.Request
 	URLParamExists(name string) bool
 	// URLParamDefault returns the get parameter from a request,
 	// if not found then "def" is returned.
+	// 查询url参数中指定的值，如果没有则 def 参数的值
 	URLParamDefault(name string, def string) string
 	// URLParam returns the get parameter from a request, if any.
+	// 本质就是 URLParamDefault(name, "")
 	URLParam(name string) string
 	// URLParamTrim returns the url query parameter with trailing white spaces removed from a request.
+	// 就是在URLParam基础上多了处理空格
 	URLParamTrim(name string) string
 	// URLParamTrim returns the escaped url query parameter from a request.
 	URLParamEscape(name string) string
 	// URLParamInt returns the url query parameter as int value from a request,
 	// returns -1 and an error if parse failed.
+	// 根据 name 参数返回对应的值是 int 类型
 	URLParamInt(name string) (int, error)
 	// URLParamIntDefault returns the url query parameter as int value from a request,
 	// if not found or parse failed then "def" is returned.
@@ -417,15 +474,18 @@ type Context interface {
 	URLParamBool(name string) (bool, error)
 	// URLParams returns a map of GET query parameters separated by comma if more than one
 	// it returns an empty map if nothing found.
+	// 就是将 url.go 中 Values (type Values map[string][]string）转为对应的格式
 	URLParams() map[string]string
 
 	// FormValueDefault returns a single parsed form value by its "name",
 	// including both the URL field's query parameters and the POST or PUT form data.
 	//
 	// Returns the "def" if not found.
+	// 通过ctx.form() 得到的 (form map[string][]string, found bool），然后拿取对应map的第一个string，如果没有则返回def
 	FormValueDefault(name string, def string) string
 	// FormValue returns a single parsed form value by its "name",
 	// including both the URL field's query parameters and the POST or PUT form data.
+	// 即 FormValueDefault(name, "")
 	FormValue(name string) string
 	// FormValues returns the parsed form data, including both the URL
 	// field's query parameters and the POST or PUT form data.
@@ -434,12 +494,14 @@ type Context interface {
 	// `iris#WithPostMaxMemory` configurator at main configuration passed on `app.Run`'s second argument.
 	//
 	// NOTE: A check for nil is necessary.
+	// 这个是直接返回了ctx.form 可能会有nil，所以一定要判断是否为nil，即len()!=0
 	FormValues() map[string][]string
 
 	// PostValueDefault returns the parsed form data from POST, PATCH,
 	// or PUT body parameters based on a "name".
 	//
 	// If not found then "def" is returned instead.
+	// 这个内部是通过ctx.form()后，然后在通过request.PostForm()过
 	PostValueDefault(name string, def string) string
 	// PostValue returns the parsed form data from POST, PATCH,
 	// or PUT body parameters based on a "name"
@@ -494,17 +556,22 @@ type Context interface {
 	//  `iris#WithPostMaxMemory` configurator at main configuration passed on `app.Run`'s second argument.
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/http_request/upload-file
+	// 根据 key 获取第一个客户端上传的文件,通过原生的 http.Request{}.FormFile()
 	FormFile(key string) (multipart.File, *multipart.FileHeader, error)
 	// UploadFormFiles uploads any received file(s) from the client
 	// to the system physical location "destDirectory".
+	// 这是将客户端上传的图片 保存到磁盘中
 	//
 	// The second optional argument "before" gives caller the chance to
 	// modify the *miltipart.FileHeader before saving to the disk,
 	// it can be used to change a file's name based on the current request,
 	// all FileHeader's options can be changed. You can ignore it if
 	// you don't need to use this capability before saving a file to the disk.
+	// 参数 before 是用来将文件上传到指定磁盘时候，可以让其多一步操作
 	//
 	// Note that it doesn't check if request body streamed.
+	// 如果是请求流，则不用检查
+	// todo 问题：这里的请求流是什么意思？？检查什么呢？？
 	//
 	// Returns the copied length as int64 and
 	// a not nil error if at least one new file
@@ -513,6 +580,7 @@ type Context interface {
 	//
 	// If you want to receive & accept files and manage them manually you can use the `context#FormFile`
 	// instead and create a copy function that suits your needs, the below is for generic usage.
+	// 如果想手动处理文件流，则可以用上面的 FormFile() ，UploadFormFiles是通用的处理方式
 	//
 	// The default form's memory maximum size is 32MB, it can be changed by the
 	//  `iris#WithPostMaxMemory` configurator at main configuration passed on `app.Run`'s second argument.
@@ -533,6 +601,7 @@ type Context interface {
 	// error code and change it to a more specific one, i.e
 	// users := app.Party("/users")
 	// users.Done(func(ctx context.Context){ if ctx.StatusCode() == 400 { /*  custom error code for /users */ }})
+	// 即 StatusCode(404)，即通过原生的 responseWriter 的 WriteHeader()
 	NotFound()
 
 	//  +------------------------------------------------------------+
@@ -541,6 +610,10 @@ type Context interface {
 
 	// SetMaxRequestBodySize sets a limit to the request body size
 	// should be called before reading the request body from the client.
+	// 限制请求体的大小，在读取来自客户端请求体数据之前调用
+	// 其本质是设置Request.Body的参数，其中Body是 io.ReadCloser
+	// todo 原生 io.ReadCloser，以及 Request.Body 源码阅读？？
+	// 通过原生 request.go 中 maxBytesReader 来限制请求体的大小
 	SetMaxRequestBodySize(limitOverBytes int64)
 
 	// UnmarshalBody reads the request's body and binds it to a value or pointer of any type.
@@ -551,10 +624,13 @@ type Context interface {
 	// UnmarshalBody does not check about gzipped data.
 	// Do not rely on compressed data incoming to your server. The main reason is: https://en.wikipedia.org/wiki/Zip_bomb
 	// However you are still free to read the `ctx.Request().Body io.Reader` manually.
+	// 可以看例子来，即自定义Unmarshaler的格式
 	UnmarshalBody(outPtr interface{}, unmarshaler Unmarshaler) error
 	// ReadJSON reads JSON from request's body and binds it to a pointer of a value of any json-valid type.
 	//
 	// Example: https://github.com/kataras/iris/blob/master/_examples/http_request/read-json/main.go
+	// 内部实现直接使用了json.Unmarshaler，如果有优化则jsonitor.Unmashaler
+	// 本质都是通过UnmarshalBody的方法，不过第二参数有修改
 	ReadJSON(jsonObjectPtr interface{}) error
 	// ReadXML reads XML from request's body and binds it to a pointer of a value of any xml-valid type.
 	//
@@ -565,6 +641,8 @@ type Context interface {
 	// It will return nothing if request data are empty.
 	//
 	// Example: https://github.com/kataras/iris/blob/master/_examples/http_request/read-form/main.go
+	// 这是将form格式转化为对象
+	// todo 本质是通过formbinder.Decode()来实现，阅读formbinder.Decode()
 	ReadForm(formObjectPtr interface{}) error
 
 	//  +------------------------------------------------------------+
@@ -578,6 +656,10 @@ type Context interface {
 	// does not contain a Content-Type line, Write adds a Content-Type set
 	// to the result of passing the initial 512 bytes of written data to
 	// DetectContentType.
+	// 如果在这之前，WriteHeader没有被调用，则会调用WriteHeader(http.StatusOK)，
+	// 如果Header没有 Content-Type ，则会设置去通过返回的数据最初的512字节数来判断
+	// todo 512字节数判断的规则？？？？
+	// 在其Write的实现部分会调用一次tryWriterHeader
 	//
 	// Depending on the HTTP protocol version and the client, calling
 	// Write or WriteHeader may prevent future reads on the
@@ -590,14 +672,20 @@ type Context interface {
 	// writing the response. However, such behavior may not be supported
 	// by all HTTP/2 clients. Handlers should read before writing if
 	// possible to maximize compatibility.
+	// 不同的客户端HTTP协议，Write()执行后会有不同的效果
+	// HTTP/1.x：服务端Write调用，其请求体则会过期
+	// HTTP/2  ：服务端Write可以和读取请求体并发执行，不过有些行为不会支持
+	// 实现是用原生的responseWriter.Write()来实现
 	Write(body []byte) (int, error)
 	// Writef formats according to a format specifier and writes to the response.
 	//
 	// Returns the number of bytes written and any write error encountered.
+	// 本质还是Write()，这个实现方式去看看
 	Writef(format string, args ...interface{}) (int, error)
 	// WriteString writes a simple string to the response.
 	//
 	// Returns the number of bytes written and any write error encountered.
+	// 意思也很明显，这个实现方式要去看看
 	WriteString(body string) (int, error)
 
 	// SetLastModified sets the "Last-Modified" based on the "modtime" input.
@@ -607,6 +695,7 @@ type Context interface {
 	//
 	// Note that modtime.UTC() is being used instead of just modtime, so
 	// you don't have to know the internals in order to make that works.
+	// 这就是设置响应的头文件 "Last-Modified"
 	SetLastModified(modtime time.Time)
 	// CheckIfModifiedSince checks if the response is modified since the "modtime".
 	// Note that it has nothing to do with server-side caching.
@@ -625,15 +714,19 @@ type Context interface {
 	//
 	// Note that modtime.UTC() is being used instead of just modtime, so
 	// you don't have to know the internals in order to make that works.
+	// 判断客户端请求的时间与服务端的时间在UTC格式下，客户端的时间是否是在于服务端的时间之后
+	// 似乎有两种使用情况，一种是普通请求，一种是文件时间，预计是来处理客户端缓存用的
 	CheckIfModifiedSince(modtime time.Time) (bool, error)
 	// WriteNotModified sends a 304 "Not Modified" status code to the client,
 	// it makes sure that the content type, the content length headers
 	// and any "ETag" are removed before the response sent.
 	//
 	// It's mostly used internally on core/router/fs.go and context methods.
+	// 返回304的时候，要注意删除Content-Type和Content-Length以及根据Etag得到的Last-Modified
 	WriteNotModified()
 	// WriteWithExpiration like Write but it sends with an expiration datetime
 	// which is refreshed every package-level `StaticCacheDuration` field.
+	// 与Write类似，不过多了时间用来修改响应流头协议 Last-Modified
 	WriteWithExpiration(body []byte, modtime time.Time) (int, error)
 	// StreamWriter registers the given stream writer for populating
 	// response body.
@@ -649,29 +742,40 @@ type Context interface {
 	//
 	// receives a function which receives the response writer
 	// and returns false when it should stop writing, otherwise true in order to continue
+	// 注册一个写入响应体的方法，可以用 and/or 来禁止，当响应体很大（超过了iris设置的请求体大小），或返回的数据是外部数据（比如硬盘），
+	// 或返回的数据要成块
+	// todo 问题：in chunks 不理解？？可能是gzipResponseWrtier
+	// 暂时还没有地方被使用
 	StreamWriter(writer func(w io.Writer) bool)
 
 	//  +------------------------------------------------------------+
 	//  | Body Writers with compression                              |
 	//  +------------------------------------------------------------+
 	// ClientSupportsGzip retruns true if the client supports gzip compression.
+	// 判断iris是否支持Gzip压缩
 	ClientSupportsGzip() bool
 	// WriteGzip accepts bytes, which are compressed to gzip format and sent to the client.
 	// returns the number of bytes written and an error ( if the client doesn' supports gzip compression)
 	// You may re-use this function in the same handler
 	// to write more data many times without any troubles.
+	// 如果客户端不支持gzip压缩，则会报错，而且这个方法可以在一样的handler中多次使用，
+	// 内部通过ctx.GzipResponseWriter().Write()来实现
 	WriteGzip(b []byte) (int, error)
 	// TryWriteGzip accepts bytes, which are compressed to gzip format and sent to the client.
 	// If client does not supprots gzip then the contents are written as they are, uncompressed.
+	// 这个方式就比之前的方式柔和了很多
 	TryWriteGzip(b []byte) (int, error)
 	// GzipResponseWriter converts the current response writer into a response writer
 	// which when its .Write called it compress the data to gzip and writes them to the client.
 	//
 	// Can be also disabled with its .Disable and .ResetBody to rollback to the usual response writer.
+	// 将当前的response Writer 转成 GzipResponseWriter
+	// 可以通过 GzipResponseWriter中的 .Disable 和 .ResetBody 来回滚到之前的ResponseWriter
 	GzipResponseWriter() *GzipResponseWriter
 	// Gzip enables or disables (if enabled before) the gzip response writer,if the client
 	// supports gzip compression, so the following response data will
 	// be sent as compressed gzip data to the client.
+	// 这里表示是否开启Gzip
 	Gzip(enable bool)
 
 	//  +------------------------------------------------------------+
@@ -689,6 +793,7 @@ type Context interface {
 	// Look .ViewData and .View too.
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/view/context-view-data/
+	// 表示具体layout模板的文件，内部通过Configuration.go 中的 ViewLayoutContextKey 字段来保存
 	ViewLayout(layoutTmplFile string)
 	// ViewData saves one or more key-value pair in order to be passed if and when .View
 	// is being called afterwards, in the same request.
@@ -708,6 +813,11 @@ type Context interface {
 	// Look .ViewLayout and .View too.
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/view/context-view-data/
+	// 首先描述viewDataContextKey（可以通过ctx.Application().ConfigurationReadOnly().GetViewDataContextKey()，
+	// 即Configuration中ViewDataContextKey字段获取），
+	// 如果key为""，则这里的value是存储的容器，存储在context.Values中，key是viewDataContextKey
+	// 如果key!=""，则通过viewDataContextKey获取context.Values对应的容器，如果容器不存在，则新建一个context.Map{}的容器，
+	// 并保存key和value，如果容器存在，则判断是否是map或者是context.Map，如果有则更新，没有则新增，如果不是则忽略
 	ViewData(key string, value interface{})
 	// GetViewData returns the values registered by `context#ViewData`.
 	// The return value is `map[string]interface{}`, this means that
@@ -718,6 +828,7 @@ type Context interface {
 	//
 	// Similarly to `viewData := ctx.Values().Get("iris.viewData")` or
 	// `viewData := ctx.Values().Get(ctx.Application().ConfigurationReadOnly().GetViewDataContextKey())`.
+	// 这个说明了如果存储的容器（容器的意思看ViewData()）是自定义结构，则会自发的将其转为map形式，如果失败则返回nil，所以使用的时候要注意是否为nil
 	GetViewData() map[string]interface{}
 	// View renders a template based on the registered view engine(s).
 	// First argument accepts the filename, relative to the view engine's Directory and Extension,
@@ -762,6 +873,11 @@ type Context interface {
 	//
 	// This function doesn't support resuming (by range),
 	// use ctx.SendFile or router's `StaticWeb` instead.
+	// 自动设置content和headers，是比较低级的方法，可以被.ServeFile()/SendFile()取代
+	// 可以在这个方法前自己定义Conetnt-Type
+	// 这个方法不支持重新设置，可以使用ctx.SendFile 或者是 router's StaticWeb替代
+	// todo io.ReadSeeker 源码阅读？？
+	// ServeContent 是通过 io的角度处理
 	ServeContent(content io.ReadSeeker, filename string, modtime time.Time, gzipCompression bool) error
 	// ServeFile serves a file (to send a file, a zip for example to the client you should use the `SendFile` instead)
 	// receives two parameters
@@ -774,10 +890,14 @@ type Context interface {
 	// use ctx.SendFile or router's `StaticWeb` instead.
 	//
 	// Use it when you want to serve dynamic files to the client.
+	// 内部实现是通过ServeContent()来实现，这里封装了从File角度处理
 	ServeFile(filename string, gzipCompression bool) error
 	// SendFile sends file for force-download to the client
 	//
 	// Use this instead of ServeFile to 'force-download' bigger files to the client.
+	// 这里是为了让客户端强制下载（毕竟大文件直接浏览耗时间）
+	// 设置加了一个请求头通过"Content-Disposition = attachment;filename= destinationName" 来处理
+	// 然后调用ServeFile
 	SendFile(filename string, destinationName string) error
 
 	//  +------------------------------------------------------------+
@@ -788,6 +908,8 @@ type Context interface {
 	// Use of the "options" is not required, they can be used to amend the "cookie".
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/cookies/basic
+	// todo 阅读http.Cookie源码？？
+	// options是在cookie被返回时进行的处理
 	SetCookie(cookie *http.Cookie, options ...CookieOption)
 	// SetCookieKV adds a cookie, requires the name(string) and the value(string).
 	//
@@ -805,6 +927,8 @@ type Context interface {
 	//                              iris.CookieHTTPOnly(false)
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/cookies/basic
+	// 在cookie中添加 name 和 value，且默认生存时间是2小时，且添加到根路径，可以通过 CookieExpires 和 CookiePath 修改
+	// 具体的使用方式可以看上面注释的例子，本质还是SetCookie(&http.Cookie{})
 	SetCookieKV(name, value string, options ...CookieOption)
 	// GetCookie returns cookie's value by it's name
 	// returns empty string if nothing was found.
@@ -813,19 +937,24 @@ type Context interface {
 	// cookie, err := ctx.Request().Cookie("name")
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/cookies/basic
+	// 根据指定的name来查询Cookie
 	GetCookie(name string, options ...CookieOption) string
 	// RemoveCookie deletes a cookie by it's name and path = "/".
 	// Tip: change the cookie's path to the current one by: RemoveCookie("name", iris.CookieCleanPath)
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/cookies/basic
+	// 删除cookie中path为"/"中对应的name，可以通过iris.CookieCleanPath 修改成当前路径
+	// todo 阅读 iris.CookieCleanPath 实现
 	RemoveCookie(name string, options ...CookieOption)
 	// VisitAllCookies takes a visitor which loops
 	// on each (request's) cookies' name and value.
+	// 自定义接口来循环处理Cookie的值
 	VisitAllCookies(visitor func(name string, value string))
 
 	// MaxAge returns the "cache-control" request header's value
 	// seconds as int64
 	// if header not found or parse failed then it returns -1.
+	// 如果请求头有 Cache-Control ，才返回int64 结构的生存时间，如果没有则返回-1
 	MaxAge() int64
 
 	//  +------------------------------------------------------------+
@@ -835,15 +964,20 @@ type Context interface {
 	// Record transforms the context's basic and direct responseWriter to a ResponseRecorder
 	// which can be used to reset the body, reset headers, get the body,
 	// get & set the status code at any time and more.
+	// Record 将ResponseWriter 转变成 ResponseRecorder
+	// todo ResponseRecorder 是什么作用，阅读ResponseRecorder 源码？？
 	Record()
 	// Recorder returns the context's ResponseRecorder
 	// if not recording then it starts recording and returns the new context's ResponseRecorder
+	// 返回当前context的ResponseRecorder
 	Recorder() *ResponseRecorder
 	// IsRecording returns the response recorder and a true value
 	// when the response writer is recording the status code, body, headers and so on,
 	// else returns nil and false.
+	// 就是断言类型 ResponseRecorder
 	IsRecording() (*ResponseRecorder, bool)
 
+	// todo BeginTransaction 想了解可以看一下？？？
 	// BeginTransaction starts a scoped transaction.
 	//
 	// You can search third-party articles or books on how Business Transaction works (it's quite simple, especially here).
@@ -890,6 +1024,7 @@ type Context interface {
 
 	// RouteExists reports whether a particular route exists
 	// It will search from the current subdomain of context's host, if not inside the root domain.
+	// 判断当前的context.Application中是否有对应的方法和路径的路由
 	RouteExists(method, path string) bool
 
 	// Application returns the iris app instance which belongs to this context.
@@ -897,6 +1032,7 @@ type Context interface {
 	// of the Application, which contains methods that are safe
 	// to be executed at serve-time. The full app's fields
 	// and methods are not available here for the developer's safety.
+	// 返回当前iris 的 app 实例
 	Application() Application
 
 	// String returns the string representation of this request.
@@ -906,6 +1042,8 @@ type Context interface {
 	// What it returns? A number which declares the length of the
 	// total `String` calls per executable application, followed
 	// by the remote IP (the client) and finally the method:url.
+	// 表示当前的 Request 的string
+	// 每一个Context有一个唯一的标志
 	String() string
 }
 
@@ -962,7 +1100,7 @@ type context struct {
 	writer ResponseWriter
 
 	// the original http.Request
-	// 这个是golang原生的http.Request
+	// 这个是原生的 http.Request
 	request *http.Request
 
 	// the current route's name registered to this request path.
@@ -972,12 +1110,13 @@ type context struct {
 	// the local key-value storage
 	// RequestParams用来用于动态路径用的
 	params RequestParams // url named parameters.
-
-	// todo 这个暂时还不知道什么作用，是一个[]Key-Value结构
+	// 问题：这个暂时还不知道什么作用，是一个[]Key-Value结构？？？
+	// 解答：这是用来存储中间件之间传输数据的载体
 	values memstore.Store // generic storage, middleware communication.
 
 	// the underline application app.
-	// todo 不知道是当前的Application的作用
+	// 问题：不知道是当前的Application的作用？？
+	// 解答：保存的是整个当前运行的Application，任何请求生成的Context都通用这个Application
 	app Application
 
 	// the route's handlers
@@ -986,7 +1125,8 @@ type context struct {
 
 	// the current position of the handler's chain
 	// 当前处理的handler在handler链中的位置
-	//todo 这里啥时候变更呢
+	// 问题:这里啥时候变更呢？？
+	// 通过context.Next()来进行变更，而且表示包含这个索引以及之前的handler都已经调用过了
 	currentHandlerIndex int
 }
 
@@ -1054,6 +1194,7 @@ func (ctx *context) EndRequest() {
 		// because we didn't flush the response yet
 		// if !recording  then check if the previous handler didn't send something
 		// to the client.
+		// todo 上面的注释是通过Transaction，想了解的时候再看？？？
 		if ctx.writer.Written() <= 0 {
 			// Author's notes:
 			// previously: == -1,
@@ -1065,6 +1206,8 @@ func (ctx *context) EndRequest() {
 			// action, the .Written() was 0 even on empty response, this 0 means that
 			// a status code given, the previous check of the "== -1" didn't make check for that,
 			// we do now.
+			// 这里是通过APIBuilder实现了FireErrorCode()，即根据当前的context.ResponseWriter接口里的实现类responseWriter
+			// 得到的状态码返回错误信息
 			ctx.Application().FireErrorCode(ctx)
 		}
 	}
@@ -1114,7 +1257,7 @@ func (ctx *context) GetCurrentRoute() RouteReadOnly {
 //
 // It's used by the router, developers may use that
 // to replace and execute handlers immediately.
-// todo 这里只是给当前ctx设置Handlers 而且只执行第一个，啥时候执行接下来的呢?
+// todo 这里只是给当前ctx设置Handlers 而且只执行第一个，啥时候执行接下来的呢?，什么时候调用这个的呢，currentIndex要更新吗？？
 func (ctx *context) Do(handlers Handlers) {
 	Do(ctx, handlers)
 }
@@ -1192,6 +1335,7 @@ func (ctx *context) HandlerIndex(n int) (currentIndex int) {
 //	  return c.Service.GetAll()
 //}
 // Alternative way is `!ctx.IsStopped()` if middleware make use of the `ctx.StopExecution()` on failure.
+// 大部分在apply(handlers)中的handlers封装了!ctx.Proceed(),然后再ctx.Next()
 func (ctx *context) Proceed(h Handler) bool {
 	beforeIdx := ctx.currentHandlerIndex
 	h(ctx)
@@ -1238,8 +1382,10 @@ func DefaultNext(ctx Context) {
 // it should be used inside a middleware.
 //
 // Note: Custom context should override this method in order to be able to pass its own context.Context implementation.
-// todo 问题:这个什么时候被调用呢？？(这个用Context interface 的Next()查询会更好)
+// 问题:这个什么时候被调用呢？？(这个用Context interface 的Next()查询会更好)
+// 解答：在当前context需要调用handler链下面一个handler的时候调用
 func (ctx *context) Next() { // or context.Next(ctx)
+	// Next=DefaultNext，DefaultNext的作用就是让currentHandlerIndex+1，然后对应位置的Handler调用
 	Next(ctx)
 }
 
@@ -1285,7 +1431,8 @@ func (ctx *context) NextOrNotFound() bool { return ctx.NextOr() }
 //
 // Use .Skip() to skip this handler if needed to execute the next of this returning handler.
 // 用NextHandler可以判断接下来是否还有没使用的Handler
-// todo 这里为啥不需要锁呢？
+// 问题：这里为啥不需要锁呢？？
+// 解答：因为每一个Request请求都会单独的从cpool生成一个Context，都是独立的
 func (ctx *context) NextHandler() Handler {
 	if ctx.IsStopped() {
 		return nil
@@ -1322,16 +1469,21 @@ func (ctx *context) IsStopped() bool {
 
 // OnConnectionClose registers the "cb" function which will fire (on its own goroutine, no need to be registered goroutine by the end-dev)
 // when the underlying connection has gone away.
+// OnConnectionCLose 注册一个回调函数，这个回调函数会在链接断开的时候执行（而且自己生成一个协程）
 //
 // This mechanism can be used to cancel long operations on the server
 // if the client has disconnected before the response is ready.
+// 这个机制可以被用在取消长操作，比如在应答前客户端以及取消链接了
 //
 // It depends on the `http#CloseNotify`.
 // CloseNotify may wait to notify until Request.Body has been
 // fully read.
+// 这个取决于CloseNotify，CloseNotify等请求体被全部读取完后去notify
+// todo CloseNotify去notify什么？？
 //
 // After the main Handler has returned, there is no guarantee
 // that the channel receives a value.
+// 当mainHandler全部返回，通过也没法保证有接收到值
 //
 // Finally, it reports whether the protocol supports pipelines (HTTP/1.1 with pipelines disabled is not supported).
 // The "cb" will not fire for sure if the output value is false.
@@ -1339,16 +1491,19 @@ func (ctx *context) IsStopped() bool {
 // Note that you can register only one callback for the entire request handler chain/per route.
 //
 // Look the `ResponseWriter#CloseNotifier` for more.
+// todo 看context#CloseNotifier如何实现？？？
 func (ctx *context) OnConnectionClose(cb func()) bool {
 	// Note that `ctx.ResponseWriter().CloseNotify()` can already do the same
 	// but it returns a channel which will never fire if it the protocol version is not compatible,
 	// here we don't want to allocate an empty channel, just skip it.
+	// todo 有关Notifier这里的机制并不了解？？？需要学习
 	notifier, ok := ctx.writer.CloseNotifier()
 	if !ok {
 		return false
 	}
 
 	notify := notifier.CloseNotify()
+	// 这里自己开了一个协程去接数据，等有notify然后调用回调函数
 	go func() {
 		<-notify
 		if cb != nil {
@@ -1386,7 +1541,7 @@ func (ctx *context) OnClose(cb func()) {
 	// 	})
 	// 	return
 	// }
-
+	// 这就是设置 FlushResponse() 的时候要调用的函数回调
 	ctx.writer.SetBeforeFlush(cb)
 }
 
@@ -1446,6 +1601,7 @@ func (ctx *context) Path() string {
 //
 // http://www.blooberry.com/indexdot/html/topics/urlencoding.htm
 // it uses just the url.QueryUnescape
+// 可以看上面的网址来知道哪些需要Encoding
 func DecodeQuery(path string) string {
 	if path == "" {
 		return ""
@@ -1501,6 +1657,7 @@ func (ctx *context) Host() string {
 
 // GetHost returns the host part of the current URI.
 func GetHost(r *http.Request) string {
+	// 返回的是原生 request.go 中 Request 的 URL 字段中的host部分
 	h := r.URL.Host
 	if h == "" {
 		h = r.Host
@@ -1510,15 +1667,22 @@ func GetHost(r *http.Request) string {
 
 // Subdomain returns the subdomain of this request, if any.
 // Note that this is a fast method which does not cover all cases.
+// todo  这里没有地方调用，不理解这个方法的作用
 func (ctx *context) Subdomain() (subdomain string) {
 	host := ctx.Host()
+	// SubDomain() 返回的是第一个'.'之前的
+	// todo 问题：那如果是www.baidu.com 那子域名是www ？？？这里的子域名与平时的理解的有些不一样Ω
 	if index := strings.IndexByte(host, '.'); index > 0 {
 		subdomain = host[0:index]
 	}
 
 	// listening on mydomain.com:80
 	// subdomain = mydomain, but it's wrong, it should return ""
+	// todo 问题：这个虚拟host是什么？？？？ iris中addr.go文件中ResolveVHost(addr string) string 方法
+	// 解答：就是处理一些特殊的addr，这里的addr是iris.Addr()里面执行的，比如0.0.0.0之类的，以及:https之类的额
 	vhost := ctx.Application().ConfigurationReadOnly().GetVHost()
+	// 如果虚拟host包含了子域名，则直接返回""，说明vhost是专门处理一些特殊的域名的
+	// todo 问题：为啥这样就不算""？？
 	if strings.Contains(vhost, subdomain) { // then it's not subdomain
 		return ""
 	}
@@ -1531,6 +1695,7 @@ func (ctx *context) IsWWW() bool {
 	host := ctx.Host()
 	if index := strings.IndexByte(host, '.'); index > 0 {
 		// if it has a subdomain and it's www then return true.
+		// todo 这里也出现了VHost与subdomain的关系，必须不包含？？？
 		if subdomain := host[0:index]; !strings.Contains(ctx.Application().ConfigurationReadOnly().GetVHost(), subdomain) {
 			return subdomain == "www"
 		}
@@ -1701,6 +1866,7 @@ func (ctx *context) GetReferrer() Referrer {
 
 // Header adds a header to the response, if value is empty
 // it removes the header by its name.
+// 这里是增删请求头
 func (ctx *context) Header(name string, value string) {
 	if value == "" {
 		ctx.writer.Header().Del(name)
@@ -1717,6 +1883,7 @@ func (ctx *context) ContentType(cType string) {
 
 	// 1. if it's path or a filename or an extension,
 	// then take the content type from that
+	// 可以通过文件名或者后缀名生成Content-Type 的值比如在当前文件中ServeFile()的使用
 	if strings.Contains(cType, ".") {
 		ext := filepath.Ext(cType)
 		cType = mime.TypeByExtension(ext)
@@ -1782,6 +1949,7 @@ func (ctx *context) GetStatusCode() int {
 
 // URLParam returns true if the url parameter exists, otherwise false.
 func (ctx *context) URLParamExists(name string) bool {
+	// Query()返回的是原生 url.go 中的 Values 数据类型（type Values map[string][]string）
 	if q := ctx.request.URL.Query(); q != nil {
 		_, exists := q[name]
 		return exists
@@ -1810,6 +1978,7 @@ func (ctx *context) URLParamTrim(name string) string {
 }
 
 // URLParamTrim returns the escaped url query parameter from a request.
+// 将一些东西进行编码，为了安全起见，比如xss攻击，编码后会安全，而这里接收到编码的数据，然后进行解码，拿到原始数据
 func (ctx *context) URLParamEscape(name string) string {
 	return DecodeQuery(ctx.URLParam(name))
 }
@@ -1983,8 +2152,12 @@ func (ctx *context) form() (form map[string][]string, found bool) {
 	// therefore we don't need to call it here, although it doesn't hurt.
 	// After one call to ParseMultipartForm or ParseForm,
 	// subsequent calls have no effect, are idempotent.
+	// 由于 ParseMultipartForm() 内部也会自动调用 request.ParseForm，所以调用这个足矣
+	// todo 阅读原生的 request.go ParseMultipartForm(maxMemory int64) 方法？？？
 	ctx.request.ParseMultipartForm(ctx.Application().ConfigurationReadOnly().GetPostMaxMemory())
 
+	//  顺序 reuqest.Form -> request.PostForm -> request.MultipartForm
+	// todo 问题:Form、PostForm、MultipartForm什么区别？？？
 	if form := ctx.request.Form; len(form) > 0 {
 		return form, true
 	}
@@ -1994,6 +2167,7 @@ func (ctx *context) form() (form map[string][]string, found bool) {
 	}
 
 	if m := ctx.request.MultipartForm; m != nil {
+		// todo multipartForm 中的 Value什么用？？
 		if len(m.Value) > 0 {
 			return m.Value, true
 		}
@@ -2145,14 +2319,18 @@ func (ctx *context) FormFile(key string) (multipart.File, *multipart.FileHeader,
 
 // UploadFormFiles uploads any received file(s) from the client
 // to the system physical location "destDirectory".
+// 这是将客户端上传的图片 保存到磁盘中
 //
 // The second optional argument "before" gives caller the chance to
 // modify the *miltipart.FileHeader before saving to the disk,
 // it can be used to change a file's name based on the current request,
 // all FileHeader's options can be changed. You can ignore it if
 // you don't need to use this capability before saving a file to the disk.
+// 参数 before 是用来将文件上传到指定磁盘时候，可以让其多一步操作
 //
 // Note that it doesn't check if request body streamed.
+// 如果是请求流，则不用检查
+// todo 问题：这里的请求流是什么意思？？，检查什么呢？？
 //
 // Returns the copied length as int64 and
 // a not nil error if at least one new file
@@ -2161,6 +2339,7 @@ func (ctx *context) FormFile(key string) (multipart.File, *multipart.FileHeader,
 //
 // If you want to receive & accept files and manage them manually you can use the `context#FormFile`
 // instead and create a copy function that suits your needs, the below is for generic usage.
+// 如果想手动处理文件流，则可以用上面的 FormFile() ，UploadFormFiles是通用的处理方式
 //
 // The default form's memory maximum size is 32MB, it can be changed by the
 //  `iris#WithPostMaxMemory` configurator at main configuration passed on `app.Run`'s second argument.
@@ -2173,8 +2352,9 @@ func (ctx *context) UploadFormFiles(destDirectory string, before ...func(Context
 	if err != nil {
 		return 0, err
 	}
-
+	// 通过ctx.Request.MultipartForm来寻找文件数据
 	if ctx.request.MultipartForm != nil {
+		// 下面 MultipartForm.File 的 File 字段的数据类型是 map[string][]*FileHeader
 		if fhs := ctx.request.MultipartForm.File; fhs != nil {
 			for _, files := range fhs {
 				for _, file := range files {
@@ -2182,8 +2362,11 @@ func (ctx *context) UploadFormFiles(destDirectory string, before ...func(Context
 					for _, b := range before {
 						b(ctx, file)
 					}
-
+					// 这里才是实际的上传文件的接口
+					// todo FileHeader 结构？？
+					// 内部实际就是通过io.Copy()来进行拷贝
 					n0, err0 := uploadTo(file, destDirectory)
+					// 有一个失败就直接为0
 					if err0 != nil {
 						return 0, err0
 					}
@@ -2197,11 +2380,13 @@ func (ctx *context) UploadFormFiles(destDirectory string, before ...func(Context
 	return 0, http.ErrMissingFile
 }
 
+// todo 学习原生multipart.FileHeader 源码
 func uploadTo(fh *multipart.FileHeader, destDirectory string) (int64, error) {
 	src, err := fh.Open()
 	if err != nil {
 		return 0, err
 	}
+	// 记得打开文件记得关闭
 	defer src.Close()
 
 	out, err := os.OpenFile(filepath.Join(destDirectory, fh.Filename),
@@ -2211,7 +2396,8 @@ func uploadTo(fh *multipart.FileHeader, destDirectory string) (int64, error) {
 		return 0, err
 	}
 	defer out.Close()
-
+	// 通过io.Copy来复制文件
+	// todo io.Copy() 源码阅读
 	return io.Copy(out, src)
 }
 
@@ -2243,7 +2429,7 @@ func (ctx *context) Redirect(urlToRedirect string, statusHeader ...int) {
 		// a 'temporary-redirect-like' which works better than for our purpose
 		status = http.StatusFound
 	}
-
+	// todo 学习原生 server.go 的源码
 	http.Redirect(ctx.writer, ctx.request, urlToRedirect, status)
 }
 
@@ -2253,6 +2439,10 @@ func (ctx *context) Redirect(urlToRedirect string, statusHeader ...int) {
 
 // SetMaxRequestBodySize sets a limit to the request body size
 // should be called before reading the request body from the client.
+// 限制请求体的大小，在读取来自客户端请求体数据之前调用
+// 其本质是设置Request.Body的参数，其中Body是 io.ReadCloser
+// todo 原生 io.ReadCloser，以及 Request.Body 源码阅读？？
+// 通过原生 request.go 中 maxBytesReader 来限制请求体的大小
 func (ctx *context) SetMaxRequestBodySize(limitOverBytes int64) {
 	ctx.request.Body = http.MaxBytesReader(ctx.writer, ctx.request.Body, limitOverBytes)
 }
@@ -2269,15 +2459,20 @@ func (ctx *context) UnmarshalBody(outPtr interface{}, unmarshaler Unmarshaler) e
 	if ctx.request.Body == nil {
 		return errors.New("unmarshal: empty body")
 	}
-
+	//读取请求体全部的数据
 	rawData, err := ioutil.ReadAll(ctx.request.Body)
 	if err != nil {
 		return err
 	}
 
+	// DisableBodyConsumptionOnunmashal 只有在测试用例设置为 true，而且测试用例的例子没看到对app数据的影响
 	if ctx.Application().ConfigurationReadOnly().GetDisableBodyConsumptionOnUnmarshal() {
 		// * remember, Request.Body has no Bytes(), we have to consume them first
 		// and after re-set them to the body, this is the only solution.
+		// ioutil.NopCloser()封装Reader实现类的目的是将Close()方法直接返回nil，即没法关闭
+		// 问题:这if里的逻辑并不是特别理解？？？？
+		// 解答:是否打开配置让请求体的数据原始的接受过来，且封装一个缓存以及不能关闭
+		// todo bytes.NewBuffer()源码阅读
 		ctx.request.Body = ioutil.NopCloser(bytes.NewBuffer(rawData))
 	}
 
@@ -2286,6 +2481,7 @@ func (ctx *context) UnmarshalBody(outPtr interface{}, unmarshaler Unmarshaler) e
 	// but this is up to the user's custom Decode implementation*
 	//
 	// See 'BodyDecoder' for more.
+	// 这里则说明了outPtr如果实现了 BodyDecoder ，可以直接拿来解析原始数据
 	if decoder, isDecoder := outPtr.(BodyDecoder); isDecoder {
 		return decoder.Decode(rawData)
 	}
@@ -2308,7 +2504,9 @@ func (ctx *context) shouldOptimize() bool {
 //
 // Example: https://github.com/kataras/iris/blob/master/_examples/http_request/read-json/main.go
 func (ctx *context) ReadJSON(jsonObject interface{}) error {
+	// 这里调用原生的 json.Unmarshal
 	var unmarshaler = json.Unmarshal
+	// 如果ctx.shouldOptimize开启优化，则使用jsoniter
 	if ctx.shouldOptimize() {
 		unmarshaler = jsoniter.Unmarshal
 	}
@@ -2319,6 +2517,7 @@ func (ctx *context) ReadJSON(jsonObject interface{}) error {
 //
 // Example: https://github.com/kataras/iris/blob/master/_examples/http_request/read-xml/main.go
 func (ctx *context) ReadXML(xmlObject interface{}) error {
+	// 这里直接使用了原生的 xml.Unmarshal
 	return ctx.UnmarshalBody(xmlObject, UnmarshalerFunc(xml.Unmarshal))
 }
 
@@ -2334,8 +2533,11 @@ var IsErrPath = formbinder.IsErrPath
 // It will return nothing if request data are empty.
 //
 // Example: https://github.com/kataras/iris/blob/master/_examples/http_request/read-form/main.go
+// todo 本质是通过formbinder.Decode()来实现，阅读formbinder.Decode()
 func (ctx *context) ReadForm(formObject interface{}) error {
+	// values 的结构是 map[string][]string
 	values := ctx.FormValues()
+	// 这里是要判断是否ctx.FormValues里面是否为nil
 	if len(values) == 0 {
 		return nil
 	}
@@ -2343,6 +2545,7 @@ func (ctx *context) ReadForm(formObject interface{}) error {
 	// or dec := formbinder.NewDecoder(&formbinder.DecoderOptions{TagName: "form"})
 	// somewhere at the app level. I did change the tagName to "form"
 	// inside its source code, so it's not needed for now.
+	// todo 本质的form格式转化为对象实际的调用方式，需要看源码？？？？？
 	return formbinder.Decode(values, formObject)
 }
 
@@ -2357,6 +2560,9 @@ func (ctx *context) ReadForm(formObject interface{}) error {
 // does not contain a Content-Type line, Write adds a Content-Type set
 // to the result of passing the initial 512 bytes of written data to
 // DetectContentType.
+// 如果在这之前，WriteHeader没有被调用，则会调用WriteHeader(http.StatusOK)，
+// 如果Header没有 Content-Type ，则会设置去通过返回的数据最初的512字节数来判断
+// todo 512字节数判断的规则？？？？
 //
 // Depending on the HTTP protocol version and the client, calling
 // Write or WriteHeader may prevent future reads on the
@@ -2369,6 +2575,10 @@ func (ctx *context) ReadForm(formObject interface{}) error {
 // writing the response. However, such behavior may not be supported
 // by all HTTP/2 clients. Handlers should read before writing if
 // possible to maximize compatibility.
+// 不同的客户端HTTP协议，Write()执行后会有不同的效果
+// HTTP/1.x：服务端Write调用，其请求体则会过期
+// HTTP/2  ：服务端Write可以和读取请求体并发执行，不过有些行为不会支持
+// 实现是用原生的responseWriter.Write()来实现
 func (ctx *context) Write(rawBody []byte) (int, error) {
 	return ctx.writer.Write(rawBody)
 }
@@ -2377,6 +2587,7 @@ func (ctx *context) Write(rawBody []byte) (int, error) {
 //
 // Returns the number of bytes written and any write error encountered.
 func (ctx *context) Writef(format string, a ...interface{}) (n int, err error) {
+	// 这里的Writef不是原生的，本质是通过fmt.Fprintf(w, format, a...)
 	return ctx.writer.Writef(format, a...)
 }
 
@@ -2384,6 +2595,7 @@ func (ctx *context) Writef(format string, a ...interface{}) (n int, err error) {
 //
 // Returns the number of bytes written and any write error encountered.
 func (ctx *context) WriteString(body string) (n int, err error) {
+	// 这里的WriteString不是原生的，本质是io.WriteString()的形式实现的
 	return ctx.writer.WriteString(body)
 }
 
@@ -2398,6 +2610,9 @@ const (
 	// CacheControlHeaderKey is the header key of "Cache-Control".
 	CacheControlHeaderKey = "Cache-Control"
 	// ETagHeaderKey is the header key of "ETag".
+	// 问题：ETag是什么？？
+	// 解答：ETag是HTTP响应头资源是特定版本的标识符，这可以让缓存更高效，并节省带宽，因为如果内容没有改变，
+	// Web服务器不需要发送完整的响应。而如果内容发生了变化，使用ETag有助于防止资源的同时更新相互覆盖（“空中碰撞”）
 	ETagHeaderKey = "ETag"
 
 	// ContentDispositionHeaderKey is the header key of "Content-Disposition".
@@ -2411,6 +2626,8 @@ const (
 	// AcceptEncodingHeaderKey is the header key of "Accept-Encoding".
 	AcceptEncodingHeaderKey = "Accept-Encoding"
 	// VaryHeaderKey is the header key of "Vary".
+	// 问题：Vary 这个请求头是什么用的？？
+	// 解答：表示下一个请求是用缓存回复还是向源服务器请求（https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/Vary）
 	VaryHeaderKey = "Vary"
 )
 
@@ -2452,6 +2669,7 @@ var FormatTime = func(ctx Context, t time.Time) string {
 // It's mostly internally on core/router and context packages.
 func (ctx *context) SetLastModified(modtime time.Time) {
 	if !IsZeroTime(modtime) {
+		// 通过context中设置的时间格式，来通过UTC来进行填充
 		ctx.Header(LastModifiedHeaderKey, FormatTime(ctx, modtime.UTC())) // or modtime.UTC()?
 	}
 }
@@ -2470,10 +2688,14 @@ func (ctx *context) SetLastModified(modtime time.Time) {
 // or if parsing time from the header failed.
 //
 // It's mostly used internally, e.g. `context#WriteWithExpiration`.
+// 判断客户端请求的时间与服务端的时间在UTC格式下，客户端的时间是否是在于服务端的时间之后
+// 似乎有两种使用情况，一种是普通请求，一种是文件时间，预计是来处理客户端缓存用的
 func (ctx *context) CheckIfModifiedSince(modtime time.Time) (bool, error) {
+	// 说明方法必须是GET或者Head
 	if method := ctx.Method(); method != http.MethodGet && method != http.MethodHead {
 		return false, errors.New("skip: method")
 	}
+	// 获取请求头中 If-Modified-Since 的值
 	ims := ctx.GetHeader(IfModifiedSinceHeaderKey)
 	if ims == "" || IsZeroTime(modtime) {
 		return false, errors.New("skip: zero time")
@@ -2495,6 +2717,7 @@ func (ctx *context) CheckIfModifiedSince(modtime time.Time) (bool, error) {
 // and any "ETag" are removed before the response sent.
 //
 // It's mostly used internally on core/router/fs.go and context methods.
+// 返回304的时候，要注意删除Content-Type和Content-Length以及根据Etag得到的Last-Modified
 func (ctx *context) WriteNotModified() {
 	// RFC 7232 section 4.1:
 	// a sender SHOULD NOT generate representation metadata other than the
@@ -2512,6 +2735,7 @@ func (ctx *context) WriteNotModified() {
 
 // WriteWithExpiration like Write but it sends with an expiration datetime
 // which is refreshed every package-level `StaticCacheDuration` field.
+// 与Write类似，不过多了时间用来修改响应流头协议的 Last-Modified
 func (ctx *context) WriteWithExpiration(body []byte, modtime time.Time) (int, error) {
 	if modified, err := ctx.CheckIfModifiedSince(modtime); !modified && err == nil {
 		ctx.WriteNotModified()
@@ -2536,8 +2760,13 @@ func (ctx *context) WriteWithExpiration(body []byte, modtime time.Time) (int, er
 //
 // receives a function which receives the response writer
 // and returns false when it should stop writing, otherwise true in order to continue
+// 注册一个写入响应体的方法，可以用 and/or 来禁止，当响应体很大（超过了iris设置的请求体大小），
+// 或返回的数据是外部数据（比如硬盘），
+// 或返回的数据要成块
+// 暂时还没有地方被使用
 func (ctx *context) StreamWriter(writer func(w io.Writer) bool) {
 	w := ctx.writer
+	// todo 问题:这个是什么意思不理解
 	notifyClosed := w.CloseNotify()
 	for {
 		select {
@@ -2545,6 +2774,7 @@ func (ctx *context) StreamWriter(writer func(w io.Writer) bool) {
 		case <-notifyClosed:
 			return
 		default:
+			// 对响应流进行回调，并进行w.Flush()
 			shouldContinue := writer(w)
 			w.Flush()
 			if !shouldContinue {
@@ -2559,7 +2789,9 @@ func (ctx *context) StreamWriter(writer func(w io.Writer) bool) {
 //  +------------------------------------------------------------+
 
 // ClientSupportsGzip retruns true if the client supports gzip compression.
+// 判断iris是否支持Gzip压缩
 func (ctx *context) ClientSupportsGzip() bool {
+	// 首先判断请求是否有 Accept-Encoding 参数，且有 gzip ，则可以表示压缩
 	if h := ctx.GetHeader(AcceptEncodingHeaderKey); h != "" {
 		for _, v := range strings.Split(h, ";") {
 			if strings.Contains(v, GzipHeaderValue) { // we do Contains because sometimes browsers has the q=, we don't use it atm. || strings.Contains(v,"deflate"){
@@ -2579,16 +2811,18 @@ var (
 //
 // You may re-use this function in the same handler
 // to write more data many times without any troubles.
+//// 如果客户端不支持gzip压缩，则会报错，而且这个方法可以在一样的handler中多次使用，
 func (ctx *context) WriteGzip(b []byte) (int, error) {
 	if !ctx.ClientSupportsGzip() {
 		return 0, errClientDoesNotSupportGzip
 	}
-
+	//核心的实现方法是GzipResponseWriter().Write()
 	return ctx.GzipResponseWriter().Write(b)
 }
 
 // TryWriteGzip accepts bytes, which are compressed to gzip format and sent to the client.
 // If client does not supprots gzip then the contents are written as they are, uncompressed.
+// 这个方式就比之前的方式柔和了很多
 func (ctx *context) TryWriteGzip(b []byte) (int, error) {
 	n, err := ctx.WriteGzip(b)
 	if err != nil {
@@ -2612,6 +2846,7 @@ func (ctx *context) GzipResponseWriter() *GzipResponseWriter {
 	}
 	// if it's not acquire a new from a pool
 	// and register that as the ctx.ResponseWriter.
+	// 这里是具体实现转换成GzipResponseWriter的地方
 	gzipResWriter := AcquireGzipResponseWriter()
 	gzipResWriter.BeginGzipResponse(ctx.writer)
 	ctx.ResetResponseWriter(gzipResWriter)
@@ -2621,6 +2856,7 @@ func (ctx *context) GzipResponseWriter() *GzipResponseWriter {
 // Gzip enables or disables (if enabled before) the gzip response writer,if the client
 // supports gzip compression, so the following response data will
 // be sent as compressed gzip data to the client.
+// 这里表示是否开启Gzip
 func (ctx *context) Gzip(enable bool) {
 	if enable {
 		if ctx.ClientSupportsGzip() {
@@ -2653,6 +2889,7 @@ const (
 // Look .ViewData and .View too.
 //
 // Example: https://github.com/kataras/iris/tree/master/_examples/view/context-view-data/
+// 表示具体layout模板的文件，内部通过Configuration.go 中的 ViewLayoutContextKey 字段来保存
 func (ctx *context) ViewLayout(layoutTmplFile string) {
 	ctx.values.Set(ctx.Application().ConfigurationReadOnly().GetViewLayoutContextKey(), layoutTmplFile)
 }
@@ -2675,6 +2912,11 @@ func (ctx *context) ViewLayout(layoutTmplFile string) {
 // Look .ViewLayout and .View too.
 //
 // Example: https://github.com/kataras/iris/tree/master/_examples/view/context-view-data/
+//// 首先描述viewDataContextKey（可以通过ctx.Application().ConfigurationReadOnly().GetViewDataContextKey()，
+// 即Configuration中ViewDataContextKey字段获取），
+// 如果key为""，则这里的value是存储的容器，存储在context.Values中，key是viewDataContextKey
+// 如果key!=""，则通过viewDataContextKey获取context.Values对应的容器，如果容器不存在，则新建一个context.Map{}的容器，
+// 并保存key和value，如果容器存在，则判断是否是map或者是context.Map，如果有则更新，没有则新增，如果不是则忽略
 func (ctx *context) ViewData(key string, value interface{}) {
 	viewDataContextKey := ctx.Application().ConfigurationReadOnly().GetViewDataContextKey()
 	if key == "" {
@@ -2704,6 +2946,7 @@ func (ctx *context) ViewData(key string, value interface{}) {
 //
 // Similarly to `viewData := ctx.Values().Get("iris.viewData")` or
 // `viewData := ctx.Values().Get(ctx.Application().ConfigurationReadOnly().GetViewDataContextKey())`.
+//	这个说明了如果存储的容器（容器的意思看ViewData()）是自定义结构，则会自发的将其转为map形式，如果失败则返回nil，所以使用的时候要注意是否为nil
 func (ctx *context) GetViewData() map[string]interface{} {
 	viewDataContextKey := ctx.Application().ConfigurationReadOnly().GetViewDataContextKey()
 	v := ctx.Values().Get(viewDataContextKey)
@@ -2746,6 +2989,7 @@ func (ctx *context) GetViewData() map[string]interface{} {
 //
 // Examples: https://github.com/kataras/iris/tree/master/_examples/view
 func (ctx *context) View(filename string, optionalViewModel ...interface{}) error {
+	// 设置 Content-Type 为 text/html
 	ctx.ContentType(ContentHTMLHeaderValue)
 	cfg := ctx.Application().ConfigurationReadOnly()
 
@@ -2759,6 +3003,8 @@ func (ctx *context) View(filename string, optionalViewModel ...interface{}) erro
 		bindingData = ctx.values.Get(cfg.GetViewDataContextKey())
 	}
 
+	// 核心的功能在于View()，在 iris.go 中实现
+	// todo iris.go 中 View() 的实现？？好像是viewEngine啥的，想了解就去了解？？
 	err := ctx.Application().View(ctx.writer, filename, layout, bindingData)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
@@ -2789,18 +3035,21 @@ const (
 
 // Binary writes out the raw bytes as binary data.
 func (ctx *context) Binary(data []byte) (int, error) {
+	// 设置 Content-Type 为 application/octet-stream
 	ctx.ContentType(ContentBinaryHeaderValue)
 	return ctx.Write(data)
 }
 
 // Text writes out a string as plain text.
 func (ctx *context) Text(text string) (int, error) {
+	// 设置 Content-Type 为 text/plain
 	ctx.ContentType(ContentTextHeaderValue)
 	return ctx.writer.WriteString(text)
 }
 
 // HTML writes out a string as text/html.
 func (ctx *context) HTML(htmlContents string) (int, error) {
+	// 设置 Content-Type 为 text/html
 	ctx.ContentType(ContentHTMLHeaderValue)
 	return ctx.writer.WriteString(htmlContents)
 }
@@ -2808,11 +3057,14 @@ func (ctx *context) HTML(htmlContents string) (int, error) {
 // JSON contains the options for the JSON (Context's) Renderer.
 type JSON struct {
 	// http-specific
+	// 问题：http明确？？？ 看其有啥作用
+	// 答案：是否进行编码
 	StreamingJSON bool
 	// content-specific
 	UnescapeHTML bool
-	Indent       string
-	Prefix       string
+	// Indent估计是跟格式化JSON形式有关系
+	Indent string
+	Prefix string
 }
 
 // JSONP contains the options for the JSONP (Context's) Renderer.
@@ -2826,6 +3078,7 @@ type JSONP struct {
 type XML struct {
 	// content-specific
 	Indent string
+	// 多了一个前缀
 	Prefix string
 }
 
@@ -2850,6 +3103,7 @@ var (
 
 // WriteJSON marshals the given interface object and writes the JSON response to the 'writer'.
 // Ignores StatusCode, Gzip, StreamingJSON options.
+// Unescape 表示将url部分转码的内容解码
 func WriteJSON(writer io.Writer, v interface{}, options JSON, enableOptimization ...bool) (int, error) {
 	var (
 		result   []byte
@@ -2870,20 +3124,20 @@ func WriteJSON(writer io.Writer, v interface{}, options JSON, enableOptimization
 		if optimize {
 			marshal = jsoniter.ConfigCompatibleWithStandardLibrary.Marshal
 		}
-
+		// 这个就默认的形式
 		result, err = marshal(v)
 	}
 
 	if err != nil {
 		return 0, err
 	}
-
+	// Unescape则是取消转码的意思，比如 \\u003c -> <
 	if options.UnescapeHTML {
 		result = bytes.Replace(result, ltHex, lt, -1)
 		result = bytes.Replace(result, gtHex, gt, -1)
 		result = bytes.Replace(result, andHex, and, -1)
 	}
-
+	// 在返回的结果中加入前置
 	if prefix := options.Prefix; prefix != "" {
 		result = append([]byte(prefix), result...)
 	}
@@ -2902,9 +3156,9 @@ func (ctx *context) JSON(v interface{}, opts ...JSON) (n int, err error) {
 	if len(opts) > 0 {
 		options = opts[0]
 	}
-
+	// 设置Content-Type为 application/json
 	ctx.ContentType(ContentJSONHeaderValue)
-
+	// 如果这里为true，则通过json进行编码
 	if options.StreamingJSON {
 		if ctx.shouldOptimize() {
 			var jsoniterConfig = jsoniter.Config{
@@ -2926,7 +3180,7 @@ func (ctx *context) JSON(v interface{}, opts ...JSON) (n int, err error) {
 		}
 		return ctx.writer.Written(), err
 	}
-
+	// WriteJSON的差别在于忽略了StatusCode, Gzip, StreamingJSON选项
 	n, err = WriteJSON(ctx.writer, v, options, ctx.shouldOptimize())
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
@@ -2941,14 +3195,17 @@ var (
 )
 
 // WriteJSONP marshals the given interface object and writes the JSON response to the writer.
+// 与WriteJSON的差别在于多了callback();这样的结构
 func WriteJSONP(writer io.Writer, v interface{}, options JSONP, enableOptimization ...bool) (int, error) {
 	if callback := options.Callback; callback != "" {
+		// 这里一开始的说个事就是callback + (，这里的callback预计是前端给的
 		writer.Write([]byte(callback + "("))
+		// 最后再加上 );
 		defer writer.Write(finishCallbackB)
 	}
 
 	optimize := len(enableOptimization) > 0 && enableOptimization[0]
-
+	// 这里的indent与JSON类似，也是跟格式有关
 	if indent := options.Indent; indent != "" {
 		marshalIndent := json.MarshalIndent
 		if optimize {
@@ -2986,7 +3243,7 @@ func (ctx *context) JSONP(v interface{}, opts ...JSONP) (int, error) {
 	if len(opts) > 0 {
 		options = opts[0]
 	}
-
+	// 设置 Content-Type 为 application/javascript
 	ctx.ContentType(ContentJavascriptHeaderValue)
 
 	n, err := WriteJSONP(ctx.writer, v, options, ctx.shouldOptimize())
@@ -3001,10 +3258,12 @@ func (ctx *context) JSONP(v interface{}, opts ...JSONP) (int, error) {
 // WriteXML marshals the given interface object and writes the XML response to the writer.
 func WriteXML(writer io.Writer, v interface{}, options XML) (int, error) {
 	if prefix := options.Prefix; prefix != "" {
+		// 如果有前缀，则优先写前缀
 		writer.Write([]byte(prefix))
 	}
 
 	if indent := options.Indent; indent != "" {
+		// 这里就是xml如果有indent的格式
 		result, err := xml.MarshalIndent(v, "", indent)
 		if err != nil {
 			return 0, err
@@ -3031,7 +3290,7 @@ func (ctx *context) XML(v interface{}, opts ...XML) (int, error) {
 	if len(opts) > 0 {
 		options = opts[0]
 	}
-
+	// 设置Content-Type 为 text/xml
 	ctx.ContentType(ContentXMLHeaderValue)
 
 	n, err := WriteXML(ctx.writer, v, options)
@@ -3063,9 +3322,9 @@ func (ctx *context) Markdown(markdownB []byte, opts ...Markdown) (int, error) {
 	if len(opts) > 0 {
 		options = opts[0]
 	}
-
+	// 设置 Content-Type 为 text/html
 	ctx.ContentType(ContentHTMLHeaderValue)
-
+	// todo 这里里面的实现想了解可以看下？？
 	n, err := WriteMarkdown(ctx.writer, markdownB, options)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
@@ -3077,12 +3336,13 @@ func (ctx *context) Markdown(markdownB []byte, opts ...Markdown) (int, error) {
 
 // YAML marshals the "v" using the yaml marshaler and renders its result to the client.
 func (ctx *context) YAML(v interface{}) (int, error) {
+	// todo 用gopkg.in 包中的，想了解可以看下？？
 	out, err := yaml.Marshal(v)
 	if err != nil {
 		ctx.StatusCode(http.StatusInternalServerError)
 		return 0, err
 	}
-
+	// 设置 Content-Type 为 application/x-yaml
 	ctx.ContentType(ContentYAMLHeaderValue)
 	return ctx.Write(out)
 }
@@ -3100,7 +3360,13 @@ var (
 //
 // You can define your own "Content-Type" header also, after this function call
 // Doesn't implements resuming (by range), use ctx.SendFile instead
+// 自动设置content和headers，是比较低级的方法，可以被.ServeFile()/SendFile()取代
+// 可以在这个方法前自己定义Conetnt-Type
+// 这个方法不支持重新设置，可以使用ctx.SendFile 或者是 router's StaticWeb替代
+// todo io.ReadSeeker 源码阅读？？
+// ServeContent 是通过 io的角度处理
 func (ctx *context) ServeContent(content io.ReadSeeker, filename string, modtime time.Time, gzipCompression bool) error {
+	// 这里判断服务端这边是否有过更新
 	if modified, err := ctx.CheckIfModifiedSince(modtime); !modified && err == nil {
 		ctx.WriteNotModified()
 		return nil
@@ -3111,7 +3377,7 @@ func (ctx *context) ServeContent(content io.ReadSeeker, filename string, modtime
 	var out io.Writer
 	if gzipCompression && ctx.ClientSupportsGzip() {
 		AddGzipHeaders(ctx.writer)
-
+		// 内部有一个gzipPool池
 		gzipWriter := acquireGzipWriter(ctx.writer)
 		defer releaseGzipWriter(gzipWriter)
 		out = gzipWriter
@@ -3119,6 +3385,7 @@ func (ctx *context) ServeContent(content io.ReadSeeker, filename string, modtime
 		out = ctx.writer
 	}
 	_, err := io.Copy(out, content)
+	// 就是 errServeContent 整合了 err 的错误信息
 	return errServeContent.With(err) ///TODO: add an int64 as return value for the content length written like other writers or let it as it's in order to keep the stable api?
 }
 
@@ -3131,13 +3398,16 @@ func (ctx *context) ServeContent(content io.ReadSeeker, filename string, modtime
 // This function doesn't implement resuming (by range), use ctx.SendFile instead
 //
 // Use it when you want to serve css/js/... files to the client, for bigger files and 'force-download' use the SendFile.
+// 内部实现是通过ServeContent()来实现，这里封装了从File角度处理
 func (ctx *context) ServeFile(filename string, gzipCompression bool) error {
 	f, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("%d", 404)
 	}
 	defer f.Close()
+	// f.Stat()即返回文件的属性
 	fi, _ := f.Stat()
+	// 如果是目录，则进入这个目录并调用index.html这个文件
 	if fi.IsDir() {
 		return ctx.ServeFile(path.Join(filename, "index.html"), gzipCompression)
 	}
@@ -3148,7 +3418,11 @@ func (ctx *context) ServeFile(filename string, gzipCompression bool) error {
 // SendFile sends file for force-download to the client
 //
 // Use this instead of ServeFile to 'force-download' bigger files to the client.
+// 这里是为了让客户端强制下载（毕竟大文件直接浏览耗时间）
+// 设置加了一个请求头通过"Content-Disposition = attachment;filename= destinationName" 来处理，然后调用ServeFile
 func (ctx *context) SendFile(filename string, destinationName string) error {
+	// 问题：Set和Add()什么区别？？？
+	// 解答：因为头字段指定的key后面是一个数组，所以Add就是添加后面，set就是直接更新整个
 	ctx.writer.Header().Set(ContentDispositionHeaderKey, "attachment;filename="+destinationName)
 	return ctx.ServeFile(filename, false)
 }
@@ -3259,11 +3533,13 @@ func CookieDecode(decode CookieDecoder) CookieOption {
 // Use of the "options" is not required, they can be used to amend the "cookie".
 //
 // Example: https://github.com/kataras/iris/tree/master/_examples/cookies/basic
+// todo 阅读http.Cookie源码？？
+// options是在cookie被返回时进行的处理
 func (ctx *context) SetCookie(cookie *http.Cookie, options ...CookieOption) {
 	for _, opt := range options {
 		opt(cookie)
 	}
-
+	// 用原生的SetCookie来保存
 	http.SetCookie(ctx.writer, cookie)
 }
 
@@ -3284,11 +3560,15 @@ func (ctx *context) SetCookie(cookie *http.Cookie, options ...CookieOption) {
 //                              iris.CookieHTTPOnly(false)
 //
 // Examples: https://github.com/kataras/iris/tree/master/_examples/cookies/basic
+// 在cookie中添加 name 和 value，且默认生存时间是2小时，且添加到根路径，可以通过 CookieExpires 和 CookiePath 修改
+// 具体的使用方式可以看上面注释的例子，本质还是SetCookie(&http.Cookie{})
 func (ctx *context) SetCookieKV(name, value string, options ...CookieOption) {
 	c := &http.Cookie{}
 	c.Path = "/"
 	c.Name = name
 	c.Value = url.QueryEscape(value)
+	// 问题：httpOnly是什么意思？？（https://dreamer-yzy.github.io/2014/12/22/Cookie-%E7%9A%84-HttpOnly-%E5%92%8C-Secure-%E5%B1%9E%E6%80%A7%E4%BD%9C%E7%94%A8/）
+	// 解答：作用是保护了cookie的安全，即浏览器不能在HTTP/HTTPS之外暴露Cookie，这样就避免了用JS来暴露Cookie
 	c.HttpOnly = true
 	c.Expires = time.Now().Add(SetCookieKVExpiration)
 	c.MaxAge = int(SetCookieKVExpiration.Seconds())
@@ -3302,6 +3582,7 @@ func (ctx *context) SetCookieKV(name, value string, options ...CookieOption) {
 // cookie, err := ctx.Request().Cookie("name")
 //
 // Example: https://github.com/kataras/iris/tree/master/_examples/cookies/basic
+// 根据 name 来进行处理
 func (ctx *context) GetCookie(name string, options ...CookieOption) string {
 	cookie, err := ctx.request.Cookie(name)
 	if err != nil {
@@ -3338,11 +3619,13 @@ func (ctx *context) RemoveCookie(name string, options ...CookieOption) {
 	c.MaxAge = -1
 	ctx.SetCookie(c, options...)
 	// delete request's cookie also, which is temporary available.
+	// todo 阅读原生 Set("Cookie","")的源码
 	ctx.request.Header.Set("Cookie", "")
 }
 
 // VisitAllCookies takes a visitor which loops
 // on each (request's) cookies' name and value.
+// 自定义接口来循环处理Cookie的值
 func (ctx *context) VisitAllCookies(visitor func(name string, value string)) {
 	for _, cookie := range ctx.request.Cookies() {
 		visitor(cookie.Name, cookie.Value)
@@ -3354,11 +3637,13 @@ var maxAgeExp = regexp.MustCompile(`maxage=(\d+)`)
 // MaxAge returns the "cache-control" request header's value
 // seconds as int64
 // if header not found or parse failed then it returns -1.
+// 如果请求头有 Cache-Control ，才返回int64 结构的生存时间，如果没有则返回-1
 func (ctx *context) MaxAge() int64 {
 	header := ctx.GetHeader(CacheControlHeaderKey)
 	if header == "" {
 		return -1
 	}
+	// maxAgeExp的格式是 "maxage=(\d+)"，即 maxage = xx
 	m := maxAgeExp.FindStringSubmatch(header)
 	if len(m) == 2 {
 		if v, err := strconv.Atoi(m[1]); err == nil {
@@ -3375,8 +3660,11 @@ func (ctx *context) MaxAge() int64 {
 // Record transforms the context's basic and direct responseWriter to a *ResponseRecorder
 // which can be used to reset the body, reset headers, get the body,
 // get & set the status code at any time and more.
+// Record 将ResponseWriter 转变成 ResponseRecorder
+// todo ResponseRecorder 是什么作用？？
 func (ctx *context) Record() {
 	if w, ok := ctx.writer.(*responseWriter); ok {
+		// todo 阅读AcquireResponseRecorder()，BeginRecord的实现方法
 		recorder := AcquireResponseRecorder()
 		recorder.BeginRecord(w)
 		ctx.ResetResponseWriter(recorder)
@@ -3385,6 +3673,7 @@ func (ctx *context) Record() {
 
 // Recorder returns the context's ResponseRecorder
 // if not recording then it starts recording and returns the new context's ResponseRecorder
+// 返回当前context的ResponseRecorder
 func (ctx *context) Recorder() *ResponseRecorder {
 	ctx.Record()
 	return ctx.writer.(*ResponseRecorder)
@@ -3393,6 +3682,7 @@ func (ctx *context) Recorder() *ResponseRecorder {
 // IsRecording returns the response recorder and a true value
 // when the response writer is recording the status code, body, headers and so on,
 // else returns nil and false.
+// 就是断言类型 ResponseRecorder
 func (ctx *context) IsRecording() (*ResponseRecorder, bool) {
 	//NOTE:
 	// two return values in order to minimize the if statement:
@@ -3490,6 +3780,7 @@ func (ctx *context) TransactionsSkipped() bool {
 // context's Values and the Session are kept in order to be able to communicate via the result route.
 //
 // It's for extreme use cases, 99% of the times will never be useful for you.
+// 这里的实现的功能是服务端处理一个请求逻辑中，中途使用method 方法调用 path，然后再变回来
 func (ctx *context) Exec(method string, path string) {
 	if path == "" {
 		return
@@ -3534,6 +3825,7 @@ func (ctx *context) Exec(method string, path string) {
 
 // RouteExists reports whether a particular route exists
 // It will search from the current subdomain of context's host, if not inside the root domain.
+// 判断当前的context.Application中是否有对应的方法和路径的路由
 func (ctx *context) RouteExists(method, path string) bool {
 	return ctx.Application().RouteExists(ctx, method, path)
 }
@@ -3543,6 +3835,7 @@ func (ctx *context) RouteExists(method, path string) bool {
 // of the Application, which contains methods that are safe
 // to be executed at serve-time. The full app's fields
 // and methods are not available here for the developer's safety.
+// 返回当前iris 的 app 实例
 func (ctx *context) Application() Application {
 	return ctx.app
 }
@@ -3561,6 +3854,8 @@ func LastCapturedContextID() uint64 {
 // What it returns? A number which declares the length of the
 // total `String` calls per executable application, followed
 // by the remote IP (the client) and finally the method:url.
+// 表示当前的 Request 的string
+// 每一个Context有一个唯一的标志
 func (ctx *context) String() string {
 	if ctx.id == 0 {
 		// set the id here.

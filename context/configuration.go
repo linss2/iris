@@ -5,7 +5,9 @@ package context
 // All methods that it contains should be "safe" to be called by the context
 // at "serve time". A configuration field may be missing when it's not
 // safe or its useless to be called from a request handler.
-// todo 问题:Configuration结构体已经实现，在Context所有的方法都必须是线程安全的,是因为接口命名只是可读,注释后面的几句是什么意思呢？
+// 问题:Configuration结构体已经实现，在Context所有的方法都必须是线程安全的（在服务运行期间）,是因为接口命名只是可读,注释后面的几句是什么意思呢？
+// 解答:意思是当服务不是并发安全的情况下或者是直接通过request handler调用，则会让参数丢失，即没有输出
+// todo 问题:那上面的那些问题啥时候会出现呢？？
 type ConfigurationReadOnly interface {
 	// GetVHost returns the non-exported vhost config field.
 	//
@@ -46,6 +48,9 @@ type ConfigurationReadOnly interface {
 	// if this field setted to true then a new buffer will be created to read from and the request body.
 	// The body will not be changed and existing data before the
 	// context.UnmarshalBody/ReadJSON/ReadXML will be not consumed.
+	// 如果这个为true，则请求体就不能通过 context.UnmarshalBody/ReadJSON/ReadXML 来解析
+	// 然后用默认的io.ReadAll 从request.Body (io.ReadCloser) 去读取，如果这个参数是true，则胡创建一个缓存来读取请求体
+	// 这个请求体的数据不会被改变，且一直被保存直到 context.UnmarshalBody/ReadJSON/ReadXML 起作用
 	GetDisableBodyConsumptionOnUnmarshal() bool
 
 	// GetDisableAutoFireStatusCode returns the configuration.DisableAutoFireStatusCode.

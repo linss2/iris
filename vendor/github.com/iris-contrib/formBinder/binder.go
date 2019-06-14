@@ -67,6 +67,7 @@ type DecodeCustomType struct {
 }
 
 // Decoder the main to decode the values
+// todo 有比较了解下这整个结构体的作用先？？
 type Decoder struct {
 	main       reflect.Value
 	formValues url.Values
@@ -138,6 +139,7 @@ func (dec *Decoder) Decode(vs url.Values, dst interface{}) error {
 }
 
 // Decode decodes the url.Values into a element that must be a pointer to a type provided by argument
+// 这里规定dst必须是指针类型
 func Decode(vs url.Values, dst interface{}) error {
 	main := reflect.ValueOf(dst)
 	if main.Kind() != reflect.Ptr {
@@ -150,6 +152,7 @@ func Decode(vs url.Values, dst interface{}) error {
 			TagName: tagName,
 		},
 	}
+	// 实际就是将 url.Values 数据解析到 dst中
 	return dec.prepare()
 }
 

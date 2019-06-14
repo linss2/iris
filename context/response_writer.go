@@ -22,6 +22,7 @@ import (
 // A ResponseWriter may not be used after the Handler
 // has returned.
 type ResponseWriter interface {
+	// todo 以下接口为啥要这样命名？？？
 	http.ResponseWriter
 	http.Flusher
 	http.Hijacker
@@ -75,6 +76,7 @@ type ResponseWriter interface {
 	//
 	// FlushResponse can be called before EndResponse, but it should
 	// be the last call of this response writer.
+	// 只有在EndResponse被调用，且应该是ResponseWriter最后一个调用，即最后将未发送的状态码发送出去，并调用beforeFlush回调
 	FlushResponse()
 
 	// clone returns a clone of this response writer
@@ -97,6 +99,7 @@ type ResponseWriter interface {
 	Flusher() (http.Flusher, bool)
 
 	// CloseNotifier indicates if the protocol supports the underline connection closure notification.
+	// CloseNotifier 返回参数 表示了是否协议支持链接关闭提醒
 	CloseNotifier() (http.CloseNotifier, bool)
 }
 
@@ -104,6 +107,7 @@ type ResponseWriter interface {
 //  | Response Writer Implementation                             |
 //  +------------------------------------------------------------+
 
+// todo 从这里看感觉更合理，之前那个pool struct 寻找后来进行对比？？？？
 var rpool = sync.Pool{New: func() interface{} { return &responseWriter{} }}
 
 // AcquireResponseWriter returns a new *ResponseWriter from the pool.
@@ -121,7 +125,9 @@ func releaseResponseWriter(w ResponseWriter) {
 // ResponseWriter is the basic response writer,
 // it writes directly to the underline http.ResponseWriter
 type responseWriter struct {
-	// 原生的http.ResponseWriter
+	// 原生的http.ResponseWriter，这里是接口
+	// todo 这里的实现类在哪里呢？？？？这直接原生回调赋值，预测是server.go中的response.go
+	// todo 阅读 server.go 的源码
 	http.ResponseWriter
 
 	// http状态码
@@ -136,7 +142,6 @@ type responseWriter struct {
 	// but the response is cleared.
 	// Sometimes is useful to keep the event,
 	// so we keep one func only and let the user decide when he/she wants to override it with an empty func before the FireStatusCode (context's behavior)
-	// todo 这里有些不理解？
 	beforeFlush func()
 }
 
@@ -169,7 +174,9 @@ func (w *responseWriter) BeginResponse(underline http.ResponseWriter) {
 // EndResponse is the last function which is called right before the server sent the final response.
 //
 // Here is the place which we can make the last checks or do a cleanup.
+// EndResponse是在 服务端 响应的最后一个函数
 func (w *responseWriter) EndResponse() {
+	//将ResponseWriter返回到rpool中
 	releaseResponseWriter(w)
 }
 
@@ -267,6 +274,7 @@ func (w *responseWriter) SetBeforeFlush(cb func()) {
 }
 
 func (w *responseWriter) FlushResponse() {
+	// responseWriter.FlushResponse()之前调用 beforeFlush 回调
 	if w.beforeFlush != nil {
 		w.beforeFlush()
 	}
@@ -336,12 +344,18 @@ func (w *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // if the client is connected through an HTTP proxy,
 // the buffered data may not reach the client until the response
 // completes.
+// todo 这个方法不理解，而且w.ResponseWriter是原生的，还判断(http.Flusher)？？？下面说默认的已经实现了，是原生的吗？？
+// Flusher() 表示是否客户端支持Flush
+// 默认的HTTP/1.x 和 HTTP/2 ResponseWriter实现，但是封装了后可能没有
+// 虽然responseWriter支持Flush ，但是如果客户端是通过http代理，则缓存数据只有到响应结束才能到达客户端
 func (w *responseWriter) Flusher() (http.Flusher, bool) {
 	flusher, canFlush := w.ResponseWriter.(http.Flusher)
 	return flusher, canFlush
 }
 
 // Flush sends any buffered data to the client.
+// 将全部缓存的数据发送给客户端
+// todo 缓存的数据什么时候保存的？？
 func (w *responseWriter) Flush() {
 	if flusher, ok := w.Flusher(); ok {
 		flusher.Flush()
@@ -385,6 +399,7 @@ func (w *responseWriter) Push(target string, opts *http.PushOptions) error {
 
 // CloseNotifier indicates if the protocol supports the underline connection closure notification.
 func (w *responseWriter) CloseNotifier() (http.CloseNotifier, bool) {
+	// todo 这里判断原生的ResponseWriter是否支持http.CloseNotifier，要学习原生的机制？？
 	notifier, supportsCloseNotify := w.ResponseWriter.(http.CloseNotifier)
 	return notifier, supportsCloseNotify
 }
@@ -407,6 +422,11 @@ func (w *responseWriter) CloseNotifier() (http.CloseNotifier, bool) {
 // enabled in browsers and not seen often in the wild. If this
 // is a problem, use HTTP/2 or only use CloseNotify on methods
 // such as POST.
+// CloseNofity() 返回一个可以接收到客户端断开连接的信息的通道，且至少在Request.Body读取完成后才会调用，
+// 在handler已经返回的情况下，没法保证channel有值
+// 只有在HTTP/1.1 且CloseNotify被调用的且是Get请求，且HTTP/1.1 pipelining 被使用，随后的pipelined 请求可以发送一些
+// 值到channel中，如果HTTP/1.1 pipelining在浏览器没有开启，可以使用HTTP/2
+// todo HTTP/1.1 pipelining是什么？？？
 func (w *responseWriter) CloseNotify() <-chan bool {
 	if notifier, ok := w.CloseNotifier(); ok {
 		return notifier.CloseNotify()
